@@ -1,0 +1,62 @@
+{
+  "name": "@profullstack/submitfleet",
+  "version": "0.1.0",
+  "description": "SubmitFleet: one product profile, coordinated launch and directory submissions, proof of what went live. Self-hostable engine with CLI, TUI, HTTP API, MCP server and a mobile dashboard.",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://submitfleet.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/submitfleet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/profullstack/submitfleet/issues"
+  },
+  "keywords": [
+    "launch",
+    "directory",
+    "submission",
+    "mcp",
+    "cli",
+    "startup"
+  ],
+  "bin": {
+    "submitfleet": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "catalog",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js serve",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@libsql/client": "0.18.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "hono": "4.13.13",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "5.0.4"
+  }
+}

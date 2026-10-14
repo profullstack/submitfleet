@@ -1,0 +1,36 @@
+{
+  "note": "Reviewed seed records. A record here is research, not coverage: none is live-tested, so none counts toward the 100-destination release gate.",
+  "destinations": [
+    {
+      "slug": "tinylaunch",
+      "name": "TinyLaunch",
+      "canonical_domain": "tinylaunch.com",
+      "listing_group": "tinylaunch.com",
+      "kind": "launch",
+      "submission_url": "https://www.tinylaunch.com/api/v1/launches",
+      "required_fields": ["name", "tagline", "description", "url", "category_id", "logo"],
+      "account_requirement": "email_otp_maker_profile",
+      "fee_status": "verified_free",
+      "fee_conditions": "Free launch uses a daily free-slot pool; premium ($39) and a 110-directory service ($279) are separate paid options that SubmitFleet never selects.",
+      "fee_evidence_url": "https://www.tinylaunch.com/llms.txt",
+      "fee_checked_at": "2026-10-14T00:00:00.000Z",
+      "automation_method": "api",
+      "automation_permission": "permitted",
+      "permission_evidence": "Official agent guide documents the API for agents: https://www.tinylaunch.com/agents and https://www.tinylaunch.com/llms.txt",
+      "permission_checked_at": "2026-10-14T00:00:00.000Z",
+      "challenge_policy": "none",
+      "backlink_required": false,
+      "quality_decision": "unreviewed",
+      "quality_basis": null,
+      "adapter_id": "tinylaunch",
+      "adapter_version": "0.1.0",
+      "adapter_health": "unknown",
+      "reconcile_support": "limited",
+      "reconcile_limitation": "Launches are not listable via the documented API; confirmation comes from the POST receipt and the public launch page.",
+      "queue_limit_per_account": 1,
+      "queue_window_hours": 24,
+      "source": "https://www.tinylaunch.com/llms.txt",
+      "source_license": "facts only"
+    }
+  ]
+}
