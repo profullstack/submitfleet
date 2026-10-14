@@ -1,5 +1,5 @@
 import { readFile, stat } from 'node:fs/promises';
-import { isAbsolute, resolve, sep } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { builtinAdapters } from './adapters/index.js';
 import type { Adapter } from './adapters/types.js';
 import { tinyLaunchRequestCode, tinyLaunchVerify } from './adapters/tinylaunch.js';
@@ -55,7 +55,6 @@ export class SubmitFleet {
   readAsset = async (path: string): Promise<Buffer> => {
     const root = resolve(this.config.assetsDir);
     const full = resolve(root, path);
-    if (isAbsolute(path) && !full.startsWith(root + sep)) throw new SubmitFleetError('asset_outside_root', path);
     if (!full.startsWith(root + sep)) throw new SubmitFleetError('asset_outside_root', path);
     if (/\.(exe|sh|bat|cmd|js|mjs|html?|svg)$/i.test(full)) throw new SubmitFleetError('asset_type_not_allowed', path);
     const s = await stat(full);

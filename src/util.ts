@@ -39,8 +39,13 @@ export function hashValue(v: unknown): string {
  * slash, no query or fragment. Tracking parameters must never create a new product.
  */
 export function canonicalProductKey(url: string): string {
-  const u = new URL(url);
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('invalid_url_scheme');
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new SubmitFleetError('invalid_request', 'url is not a valid URL');
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new SubmitFleetError('invalid_url_scheme', 'url must be http(s)');
   const host = u.hostname.toLowerCase().replace(/^www\./, '');
   const path = u.pathname.replace(/\/+$/, '');
   return `${host}${path}`;

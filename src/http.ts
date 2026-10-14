@@ -1,0 +1,234 @@
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { Hono, type Context } from 'hono';
+import { z } from 'zod';
+import { DASHBOARD_HTML, DASHBOARD_JS, LANDING_HTML, INSTALL_SH } from './dashboard.js';
+import { buildMcpServer } from './mcp.js';
+import type { SubmitFleet } from './service.js';
+import { SubmitFleetError } from './util.js';
+import { authenticate, type Actor } from './workspaces.js';
+
+type Env = { Variables: { actor: Actor } };
+
+const STATUS: Record<string, number> = {
+  not_found: 404,
+  owner_required: 403,
+  unauthorized: 401,
+  invalid_request: 400,
+  validation_failed: 400,
+  invalid_url_scheme: 400,
+  canonical_identity_immutable: 409,
+  product_exists: 409,
+  product_has_submissions: 409,
+  coverage_insufficient: 409,
+  approval_invalidated: 409,
+  no_pending_approval: 409,
+  not_approved: 409,
+  invalid_state: 409,
+  invalid_transition: 409,
+  campaign_not_replannable: 409,
+  unsupported_operation: 409,
+  secret_key_missing: 503,
+};
+
+const productBody = z.object({
+  url: z.string().url().optional(),
+  name: z.string().max(200).nullable().optional(),
+  tagline: z.string().max(200).nullable().optional(),
+  description: z.string().max(20_000).nullable().optional(),
+  categories: z.array(z.string().max(100)).max(50).optional(),
+  contact_email: z.string().email().nullable().optional(),
+  logo_path: z.string().max(500).nullable().optional(),
+  facts: z.record(z.string(), z.unknown()).optional(),
+  destination_fields: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+});
+
+const planBody = z.object({
+  product_id: z.string(),
+  min_executable_destinations: z.number().int().min(1).optional(),
+  spend_limit_cents: z.number().int().min(0).optional(),
+  earliest_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  latest_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  release_scope: z.string().max(100).optional(),
+  destinations: z.array(z.string()).max(1000).optional(),
+});
+
+async function body<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
+  let raw: unknown = {};
+  const text = await c.req.text();
+  if (text) {
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      throw new SubmitFleetError('invalid_request', 'body must be JSON');
+    }
+  }
+  const r = schema.safeParse(raw);
+  if (!r.success) throw new SubmitFleetError('invalid_request', 'invalid body', r.error.issues);
+  return r.data;
+}
+
+function bearer(c: Context): string | null {
+  const h = c.req.header('authorization') ?? '';
+  return h.startsWith('Bearer ') ? h.slice(7).trim() : null;
+}
+
+export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] } = {}): Hono<Env> {
+  const app = new Hono<Env>();
+  const allowed = new Set(opts.allowedOrigins ?? []);
+
+  app.onError((err, c) => {
+    if (err instanceof SubmitFleetError) {
+      return c.json({ error: err.code, message: err.message, detail: err.detail ?? null }, (STATUS[err.code] ?? 400) as 400);
+    }
+    console.error('[submitfleet] unhandled', err);
+    return c.json({ error: 'internal_error' }, 500);
+  });
+
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('x-content-type-options', 'nosniff');
+    c.header('referrer-policy', 'no-referrer');
+    c.header('x-frame-options', 'DENY');
+  });
+
+  app.get('/', (c) => c.html(LANDING_HTML));
+  app.get('/healthz', (c) => c.json({ ok: true }));
+  app.get('/readyz', async (c) => {
+    const checks = await fleet.doctor();
+    const ready = checks.find((x) => x.check === 'database')?.ok === true;
+    return c.json({ ready, checks }, ready ? 200 : 503);
+  });
+  app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript; charset=utf-8' }));
+  app.get('/app', (c) => {
+    c.header('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'");
+    return c.html(DASHBOARD_HTML);
+  });
+  app.get('/app/app.js', (c) => c.body(DASHBOARD_JS, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' }));
+
+  // Browsers only reach the API from our own origin; agents and the CLI send no Origin.
+  const originGuard = async (c: Context<Env>, next: () => Promise<void>) => {
+    const origin = c.req.header('origin');
+    if (origin && origin !== new URL(c.req.url).origin && !allowed.has(origin)) {
+      return c.json({ error: 'origin_not_allowed' }, 403);
+    }
+    await next();
+  };
+
+  const auth = async (c: Context<Env>, next: () => Promise<void>) => {
+    const actor = await authenticate(fleet.db, bearer(c));
+    if (!actor) return c.json({ error: 'unauthorized' }, 401);
+    c.set('actor', actor);
+    await next();
+  };
+
+  // ── MCP over Streamable HTTP (stateless: one server per request) ──
+  app.all('/mcp', originGuard, auth, async (c) => {
+    const server = buildMcpServer(fleet, c.get('actor'));
+    const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    await server.connect(transport);
+    try {
+      return await transport.handleRequest(c.req.raw);
+    } finally {
+      void server.close();
+    }
+  });
+
+  const api = new Hono<Env>();
+  api.use('*', originGuard, auth);
+  const A = (c: Context<Env>) => c.get('actor');
+  const page = (c: Context) => ({ limit: Math.min(Number(c.req.query('limit') ?? 100) || 100, 500), offset: Number(c.req.query('offset') ?? 0) || 0 });
+
+  api.get('/whoami', (c) => c.json({ workspace_id: A(c).workspaceId, role: A(c).role, key_id: A(c).id }));
+
+  api.get('/products', async (c) => c.json(await fleet.productList(A(c), page(c).limit, page(c).offset)));
+  api.post('/products', async (c) => {
+    const b = await body(c, productBody.extend({ url: z.string().url() }));
+    return c.json(await fleet.productCreate(A(c), b as never), 201);
+  });
+  api.get('/products/:id', async (c) => c.json(await fleet.productGet(A(c), c.req.param('id'))));
+  api.patch('/products/:id', async (c) => c.json(await fleet.productUpdate(A(c), c.req.param('id'), (await body(c, productBody)) as never)));
+  api.delete('/products/:id', async (c) => {
+    await fleet.productDelete(A(c), c.req.param('id'));
+    return c.json({ deleted: c.req.param('id'), remote_listings_deleted: false });
+  });
+  api.post('/products/:id/approve-facts', async (c) => c.json(await fleet.productApproveFacts(A(c), c.req.param('id'))));
+
+  api.get('/catalog', async (c) => c.json(await fleet.catalogSearch(c.req.query('q'), page(c).limit, page(c).offset)));
+  api.get('/catalog/:slug', async (c) => c.json(await fleet.catalogGet(c.req.param('slug'))));
+  api.post('/catalog/import', async (c) => {
+    const b = await body(c, z.object({ source: z.string(), license: z.string(), records: z.array(z.object({ name: z.string(), url: z.string().url(), kind: z.string().optional(), categories: z.array(z.string()).optional(), labeled_free: z.boolean().optional() })).max(5000) }));
+    return c.json(await fleet.catalogImport(A(c), b.records, b.source, b.license));
+  });
+  api.post('/catalog/:slug/health', async (c) => {
+    const b = await body(c, z.object({ health: z.enum(['healthy', 'quarantined', 'broken']), reason: z.string().min(1).max(500) }));
+    await fleet.catalogSetHealth(A(c), c.req.param('slug'), b.health, b.reason);
+    return c.json(await fleet.catalogGet(c.req.param('slug')));
+  });
+  api.get('/coverage', async (c) => c.json(await fleet.coverageReport()));
+
+  api.get('/campaigns', async (c) => c.json(await fleet.campaignList(A(c))));
+  const plan = (c: Context<Env>, b: z.infer<typeof planBody>, id?: string) =>
+    fleet.campaignPlan(A(c), { productId: b.product_id, minExecutableDestinations: b.min_executable_destinations, spendLimitCents: b.spend_limit_cents, earliestDate: b.earliest_date, latestDate: b.latest_date, releaseScope: b.release_scope, destinations: b.destinations }, id);
+  api.post('/campaigns', async (c) => c.json(await plan(c, await body(c, planBody)), 201));
+  api.post('/campaigns/:id/plan', async (c) => c.json(await plan(c, await body(c, planBody), c.req.param('id'))));
+  api.get('/campaigns/:id/preview', async (c) => c.json(await fleet.campaignPreview(A(c), c.req.param('id'))));
+  api.post('/campaigns/:id/approval-request', async (c) => c.json(await fleet.approvalRequest(A(c), c.req.param('id'))));
+  api.post('/campaigns/:id/approve', async (c) => {
+    const b = await body(c, z.object({ scope_hash: z.string().length(64) }));
+    return c.json(await fleet.approvalGrant(A(c), c.req.param('id'), b.scope_hash));
+  });
+  api.post('/campaigns/:id/run', async (c) => c.json(await fleet.campaignRun(A(c), c.req.param('id'))));
+  api.get('/campaigns/:id/status', async (c) => c.json(await fleet.campaignStatus(A(c), c.req.param('id'))));
+  api.post('/campaigns/:id/pause', async (c) => {
+    await fleet.campaignPause(A(c), c.req.param('id'));
+    return c.json({ paused: c.req.param('id') });
+  });
+  api.post('/campaigns/:id/cancel', async (c) => c.json({ ...(await fleet.campaignCancel(A(c), c.req.param('id'))), remote_listings_deleted: false }));
+
+  api.get('/pause', async (c) => c.json({ paused: await fleet.pausedState(A(c)) }));
+  api.post('/pause', async (c) => {
+    await fleet.pauseAll(A(c));
+    return c.json({ paused: true });
+  });
+  api.post('/resume', async (c) => {
+    await fleet.resumeAll(A(c));
+    return c.json({ paused: false });
+  });
+
+  api.get('/accounts', async (c) => c.json(await fleet.accountStatus(A(c))));
+  api.post('/accounts/connect/start', async (c) => {
+    const b = await body(c, z.object({ destination: z.string(), email: z.string().email() }));
+    return c.json(await fleet.accountConnectStart(A(c), b.destination, b.email));
+  });
+  api.post('/accounts/connect/finish', async (c) => {
+    const b = await body(c, z.object({ destination: z.string(), email: z.string().email(), code: z.string().regex(/^\d{4,8}$/), label: z.string().max(100).optional() }));
+    return c.json(await fleet.accountConnectFinish(A(c), b.destination, b.email, b.code, b.label));
+  });
+  api.delete('/accounts/:id', async (c) => {
+    await fleet.accountDisconnect(A(c), c.req.param('id'));
+    return c.json({ disconnected: c.req.param('id') });
+  });
+
+  api.get('/human-queue', async (c) => c.json(await fleet.humanQueue(A(c))));
+  api.get('/submissions/:id', async (c) => c.json(await fleet.submissionGet(A(c), c.req.param('id'))));
+  api.post('/submissions/:id/reconcile', async (c) => c.json({ state: await fleet.submissionReconcile(A(c), c.req.param('id')) }));
+  api.post('/submissions/:id/requeue', async (c) => c.json({ requeued: await fleet.submissionRequeue(A(c), c.req.param('id')) }));
+  api.post('/submissions/:id/update', async (c) => c.json(await fleet.submissionUpdate(A(c), c.req.param('id')), 409));
+  api.post('/submissions/:id/withdraw', async (c) => c.json(await fleet.submissionWithdraw(A(c), c.req.param('id')), 409));
+
+  api.get('/reports/:campaignId', async (c) => {
+    const format = (c.req.query('format') ?? 'json') as 'markdown' | 'json' | 'csv';
+    if (!['markdown', 'json', 'csv'].includes(format)) throw new SubmitFleetError('invalid_request', 'format must be markdown, json or csv');
+    const out = await fleet.reportExport(A(c), c.req.param('campaignId'), format);
+    const type = format === 'markdown' ? 'text/markdown' : format === 'csv' ? 'text/csv' : 'application/json';
+    return c.body(out, 200, { 'content-type': `${type}; charset=utf-8` });
+  });
+  api.post('/effort', async (c) => {
+    const b = await body(c, z.object({ campaign_id: z.string().nullable(), activity: z.string().max(200), minutes: z.number().min(0).max(10_000), note: z.string().max(1000).optional() }));
+    await fleet.logEffort(A(c), b.campaign_id, b.activity, b.minutes, b.note);
+    return c.json({ ok: true });
+  });
+
+  app.route('/api/v1', api);
+  return app;
+}
