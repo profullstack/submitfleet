@@ -107,9 +107,18 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] }
 
   // Browsers only reach the API from our own origin; agents and the CLI send no Origin.
   const originGuard = async (c: Context<Env>, next: () => Promise<void>) => {
+    // Compare hosts, not full origins: behind nginx the app sees http:// while the
+    // browser sends https://, and the proxy forwards the public host.
     const origin = c.req.header('origin');
-    if (origin && origin !== new URL(c.req.url).origin && !allowed.has(origin)) {
-      return c.json({ error: 'origin_not_allowed' }, 403);
+    if (origin && !allowed.has(origin)) {
+      let originHost = '';
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        // malformed Origin: refuse below
+      }
+      const host = c.req.header('x-forwarded-host') ?? c.req.header('host') ?? new URL(c.req.url).host;
+      if (originHost !== host) return c.json({ error: 'origin_not_allowed' }, 403);
     }
     await next();
   };

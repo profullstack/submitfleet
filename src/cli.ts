@@ -177,12 +177,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         return EXIT.ok;
       }
       case 'catalog': {
-        if (sub === 'seed') {
-          const seed = JSON.parse(readFileSync(join(packageRoot(), 'catalog', 'seed.json'), 'utf8')) as { destinations: DestinationInput[] };
-          for (const d of seed.destinations) await fleet.catalogUpsert(owner, d);
-          out({ seeded: seed.destinations.length });
-          return EXIT.ok;
-        }
+        if (sub === 'seed') return out({ seeded: await seedCatalog(fleet, owner, false) }), EXIT.ok;
         if (sub === 'search') {
           const ds = await fleet.catalogSearch(arg);
           out(o.json ? ds : ds.map((d) => `${d.slug}\t${d.kind}\t${d.fee_status}\t${d.automation_method}\t${d.adapter_health}`).join('\n') || 'no destinations');
@@ -330,6 +325,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         return EXIT.ok;
       }
       case 'serve': {
+        const added = await seedCatalog(fleet, owner, true);
+        if (added) log(`seeded ${added} missing catalog record(s)`);
         const port = num(o.port, Number(process.env.PORT ?? 8787))!;
         const app = buildApp(fleet, { allowedOrigins: (process.env.SUBMITFLEET_ALLOWED_ORIGINS ?? '').split(',').filter(Boolean) });
         serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? '127.0.0.1' });
@@ -367,6 +364,18 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     log('Run `submitfleet help` for usage.');
     return EXIT.usage;
   }
+}
+
+/** Loads the reviewed seed records. With onlyMissing, never overwrites a record edited since. */
+async function seedCatalog(fleet: SubmitFleet, owner: Actor, onlyMissing: boolean): Promise<number> {
+  const seed = JSON.parse(readFileSync(join(packageRoot(), 'catalog', 'seed.json'), 'utf8')) as { destinations: DestinationInput[] };
+  let n = 0;
+  for (const d of seed.destinations) {
+    if (onlyMissing && (await fleet.catalogSearch(d.slug)).some((x) => x.slug === d.slug)) continue;
+    await fleet.catalogUpsert(owner, d);
+    n++;
+  }
+  return n;
 }
 
 async function loop(w: ReturnType<SubmitFleet['worker']>, intervalMs: number): Promise<void> {
