@@ -78,15 +78,18 @@ export function buildMcpServer(fleet: SubmitFleet, actor: Actor): McpServer {
     latest_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     release_scope: z.string().max(100).optional(),
     destinations: z.array(z.string()).max(1000).optional(),
+    mode: z.enum(['all', 'auto_only']).optional(),
+    channels: z.array(z.string()).max(20).optional(),
+    include_unknown_pricing: z.boolean().optional(),
     campaign_id: z.string().optional(),
   };
   s.registerTool(
     'submitfleet_campaign_plan',
-    { description: 'Plan (or re-plan) a free-only campaign. If fewer than min_executable_destinations (default 100) are executable, the result is coverage_insufficient with the real count and blockers, and nothing can run.', inputSchema: planInput, annotations: write },
+    { description: 'Plan (or re-plan) a free-only campaign. Each target is auto (a qualified adapter submits it) or assisted (the owner submits it from a prepared copy kit). mode auto_only is the strict unattended mode: below min_executable_destinations (default 100 there) the result is coverage_insufficient with the real count and blockers, and nothing can run.', inputSchema: planInput, annotations: write },
     wrap(async (a) => {
       const plan = await fleet.campaignPlan(
         actor,
-        { productId: a.product_id, minExecutableDestinations: a.min_executable_destinations, spendLimitCents: a.spend_limit_cents, earliestDate: a.earliest_date, latestDate: a.latest_date, releaseScope: a.release_scope, destinations: a.destinations },
+        { productId: a.product_id, minExecutableDestinations: a.min_executable_destinations, spendLimitCents: a.spend_limit_cents, earliestDate: a.earliest_date, latestDate: a.latest_date, releaseScope: a.release_scope, destinations: a.destinations, mode: a.mode, channels: a.channels, includeUnknownPricing: a.include_unknown_pricing },
         a.campaign_id,
       );
       return { campaign: plan.campaign, counts: plan.counts, blocked: plan.targets.filter((t) => !t.executable).slice(0, 200), executable: plan.targets.filter((t) => t.executable).map((t) => t.destination) };
@@ -108,6 +111,9 @@ export function buildMcpServer(fleet: SubmitFleet, actor: Actor): McpServer {
   s.registerTool('submitfleet_submission_reconcile', { description: 'Reconcile an uncertain submission, or check a submitted one for publication, using permitted reads only.', inputSchema: { id: z.string() }, annotations: { ...read, openWorldHint: true } }, wrap(async (a) => ({ state: await fleet.submissionReconcile(actor, a.id) })));
   s.registerTool('submitfleet_submission_update', { description: 'Update a remote listing if the destination supports it; otherwise unsupported_operation.', inputSchema: { id: z.string() }, annotations: write }, wrap((a) => fleet.submissionUpdate(actor, a.id)));
   s.registerTool('submitfleet_submission_withdraw', { description: 'Withdraw a remote listing if the destination supports it; otherwise unsupported_operation.', inputSchema: { id: z.string() }, annotations: { ...write, destructiveHint: true } }, wrap((a) => fleet.submissionWithdraw(actor, a.id)));
+  s.registerTool('submitfleet_campaign_queue', { description: 'Every submission in a campaign: destination, mode (auto or assisted), state and listing URL.', inputSchema: { campaign_id: z.string() }, annotations: read }, wrap((a) => fleet.campaignQueue(actor, a.campaign_id)));
+  s.registerTool('submitfleet_submission_kit', { description: 'The prepared copy kit for one submission: submit URL, eligibility, pricing note and every field value from the approved product facts.', inputSchema: { id: z.string() }, annotations: read }, wrap((a) => fleet.submissionKit(actor, a.id)));
+  s.registerTool('submitfleet_catalog_stats', { description: 'Catalog size by channel, how many are free to list, and how many submit automatically.', inputSchema: {}, annotations: read }, wrap(() => fleet.catalogStats()));
   s.registerTool('submitfleet_human_queue', { description: 'Jobs waiting for a person: challenges, payments, expired sessions, unresolved uncertainty.', inputSchema: {}, annotations: read }, wrap(() => fleet.humanQueue(actor)));
 
   s.registerTool('submitfleet_report_get', { description: 'Campaign report: original targets, exclusions, receipts, listing URLs, unresolved jobs, costs. Unknowns stay null.', inputSchema: { campaign_id: z.string() }, annotations: read }, wrap((a) => fleet.reportGet(actor, a.campaign_id)));

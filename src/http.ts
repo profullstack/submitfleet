@@ -1,11 +1,13 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { DASHBOARD_HTML, DASHBOARD_JS, LANDING_HTML, INSTALL_SH } from './dashboard.js';
+import { INSTALL_SH } from './installer.js';
+import type { Mailer } from './mail.js';
+import { mountWeb, resolveActor, sameOrigin } from './web.js';
 import { buildMcpServer } from './mcp.js';
 import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
-import { authenticate, type Actor } from './workspaces.js';
+import type { Actor } from './workspaces.js';
 
 type Env = { Variables: { actor: Actor } };
 
@@ -28,6 +30,17 @@ const STATUS: Record<string, number> = {
   campaign_not_replannable: 409,
   unsupported_operation: 409,
   secret_key_missing: 503,
+  origin_not_allowed: 403,
+  invalid_credentials: 401,
+  locked: 429,
+  rate_limited: 429,
+  link_invalid: 400,
+  weak_password: 400,
+  passkey_failed: 400,
+  url_not_public: 400,
+  url_unresolvable: 400,
+  fetch_failed: 502,
+  mail_unavailable: 503,
 };
 
 const productBody = z.object({
@@ -50,6 +63,9 @@ const planBody = z.object({
   latest_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   release_scope: z.string().max(100).optional(),
   destinations: z.array(z.string()).max(1000).optional(),
+  mode: z.enum(['all', 'auto_only']).optional(),
+  channels: z.array(z.string().max(50)).max(20).optional(),
+  include_unknown_pricing: z.boolean().optional(),
 });
 
 async function body<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
@@ -72,7 +88,7 @@ function bearer(c: Context): string | null {
   return h.startsWith('Bearer ') ? h.slice(7).trim() : null;
 }
 
-export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] } = {}): Hono<Env> {
+export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; mailer?: Mailer; publicOrigin?: string } = {}): Hono<Env> {
   const app = new Hono<Env>();
   const allowed = new Set(opts.allowedOrigins ?? []);
 
@@ -87,11 +103,11 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] }
   app.use('*', async (c, next) => {
     await next();
     c.header('x-content-type-options', 'nosniff');
-    c.header('referrer-policy', 'no-referrer');
+    // same-origin, not no-referrer: with no-referrer browsers send "Origin: null" on our own form POSTs.
+    c.header('referrer-policy', 'same-origin');
     c.header('x-frame-options', 'DENY');
   });
 
-  app.get('/', (c) => c.html(LANDING_HTML));
   app.get('/healthz', (c) => c.json({ ok: true }));
   app.get('/readyz', async (c) => {
     const checks = await fleet.doctor();
@@ -99,36 +115,20 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] }
     return c.json({ ready, checks }, ready ? 200 : 503);
   });
   app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript; charset=utf-8' }));
-  app.get('/app', (c) => {
-    c.header('content-security-policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'");
-    return c.html(DASHBOARD_HTML);
-  });
-  app.get('/app/app.js', (c) => c.body(DASHBOARD_JS, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-cache' }));
-
-  // Browsers only reach the API from our own origin; agents and the CLI send no Origin.
-  const originGuard = async (c: Context<Env>, next: () => Promise<void>) => {
-    // Compare hosts, not full origins: behind nginx the app sees http:// while the
-    // browser sends https://, and the proxy forwards the public host.
-    const origin = c.req.header('origin');
-    if (origin && !allowed.has(origin)) {
-      let originHost = '';
-      try {
-        originHost = new URL(origin).host;
-      } catch {
-        // malformed Origin: refuse below
-      }
-      const host = c.req.header('x-forwarded-host') ?? c.req.header('host') ?? new URL(c.req.url).host;
-      if (originHost !== host) return c.json({ error: 'origin_not_allowed' }, 403);
-    }
-    await next();
-  };
-
+  // Bearer tokens (agents, CLI) or the browser session. A cookie-authenticated write must
+  // come from our own pages (CSRF); cross-site browser calls are refused either way.
   const auth = async (c: Context<Env>, next: () => Promise<void>) => {
-    const actor = await authenticate(fleet.db, bearer(c));
-    if (!actor) return c.json({ error: 'unauthorized' }, 401);
-    c.set('actor', actor);
+    const origin = c.req.header('origin');
+    if (origin && !allowed.has(origin) && !sameOrigin(c)) return c.json({ error: 'origin_not_allowed' }, 403);
+    const r = await resolveActor(fleet, c);
+    if (!r) return c.json({ error: 'unauthorized' }, 401);
+    if (r.viaCookie && !['GET', 'HEAD'].includes(c.req.method) && !sameOrigin(c)) return c.json({ error: 'origin_not_allowed' }, 403);
+    c.set('actor', r.actor);
     await next();
   };
+  const originGuard = async (_c: Context<Env>, next: () => Promise<void>) => next();
+
+  mountWeb(app, fleet, { mailer: opts.mailer ?? (async () => {}), publicOrigin: opts.publicOrigin });
 
   // ── MCP over Streamable HTTP (stateless: one server per request) ──
   app.all('/mcp', originGuard, auth, async (c) => {
@@ -162,7 +162,11 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] }
   });
   api.post('/products/:id/approve-facts', async (c) => c.json(await fleet.productApproveFacts(A(c), c.req.param('id'))));
 
-  api.get('/catalog', async (c) => c.json(await fleet.catalogSearch(c.req.query('q'), page(c).limit, page(c).offset)));
+  api.get('/catalog', async (c) => {
+    const list = (k: string) => (c.req.query(k) ? c.req.query(k)!.split(',').filter(Boolean) : undefined);
+    if (c.req.query('product')) return c.json(await fleet.catalogForProduct(A(c), c.req.query('product')!, { channels: list('channel'), pricing: list('pricing'), query: c.req.query('q') }));
+    return c.json(await fleet.catalogSearch(c.req.query('q'), page(c).limit, page(c).offset, { channels: list('channel'), pricing: list('pricing') }));
+  });
   api.get('/catalog/:slug', async (c) => c.json(await fleet.catalogGet(c.req.param('slug'))));
   api.post('/catalog/import', async (c) => {
     const b = await body(c, z.object({ source: z.string(), license: z.string(), records: z.array(z.object({ name: z.string(), url: z.string().url(), kind: z.string().optional(), categories: z.array(z.string()).optional(), labeled_free: z.boolean().optional() })).max(5000) }));
@@ -177,7 +181,7 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] }
 
   api.get('/campaigns', async (c) => c.json(await fleet.campaignList(A(c))));
   const plan = (c: Context<Env>, b: z.infer<typeof planBody>, id?: string) =>
-    fleet.campaignPlan(A(c), { productId: b.product_id, minExecutableDestinations: b.min_executable_destinations, spendLimitCents: b.spend_limit_cents, earliestDate: b.earliest_date, latestDate: b.latest_date, releaseScope: b.release_scope, destinations: b.destinations }, id);
+    fleet.campaignPlan(A(c), { productId: b.product_id, minExecutableDestinations: b.min_executable_destinations, spendLimitCents: b.spend_limit_cents, earliestDate: b.earliest_date, latestDate: b.latest_date, releaseScope: b.release_scope, destinations: b.destinations, mode: b.mode, channels: b.channels, includeUnknownPricing: b.include_unknown_pricing }, id);
   api.post('/campaigns', async (c) => c.json(await plan(c, await body(c, planBody)), 201));
   api.post('/campaigns/:id/plan', async (c) => c.json(await plan(c, await body(c, planBody), c.req.param('id'))));
   api.get('/campaigns/:id/preview', async (c) => c.json(await fleet.campaignPreview(A(c), c.req.param('id'))));
@@ -236,6 +240,35 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[] }
     const b = await body(c, z.object({ campaign_id: z.string().nullable(), activity: z.string().max(200), minutes: z.number().min(0).max(10_000), note: z.string().max(1000).optional() }));
     await fleet.logEffort(A(c), b.campaign_id, b.activity, b.minutes, b.note);
     return c.json({ ok: true });
+  });
+
+  api.post('/products/extract', async (c) => {
+    const b = await body(c, z.object({ url: z.string().url().max(2000) }));
+    return c.json(await fleet.productExtract(b.url));
+  });
+  api.put('/products/:id/logo', async (c) => {
+    const bytes = Buffer.from(await c.req.arrayBuffer());
+    return c.json(await fleet.productSetLogo(A(c), c.req.param('id'), bytes, c.req.header('content-type') ?? ''));
+  });
+  api.post('/products/:id/logo/from-url', async (c) => {
+    const b = await body(c, z.object({ url: z.string().url().max(2000) }));
+    return c.json(await fleet.productLogoFromUrl(A(c), c.req.param('id'), b.url));
+  });
+  api.get('/catalog-stats', async (c) => c.json(await fleet.catalogStats()));
+  api.get('/campaigns/:id/queue', async (c) => c.json(await fleet.campaignQueue(A(c), c.req.param('id'))));
+  api.get('/submissions/:id/kit', async (c) => c.json(await fleet.submissionKit(A(c), c.req.param('id'))));
+  api.post('/submissions/:id/mark', async (c) => {
+    const b = await body(c, z.object({ action: z.enum(['submitted', 'live', 'rejected', 'skipped']), listing_url: z.string().max(2000).nullable().optional(), note: z.string().max(2000).nullable().optional() }));
+    return c.json(await fleet.submissionMark(A(c), c.req.param('id'), b.action, { listing_url: b.listing_url, note: b.note }));
+  });
+  api.get('/keys', async (c) => c.json(await fleet.apiKeyList(A(c))));
+  api.post('/keys', async (c) => {
+    const b = await body(c, z.object({ role: z.enum(['owner', 'agent']), label: z.string().max(80) }));
+    return c.json(await fleet.apiKeyCreate(A(c), b.role, b.label), 201);
+  });
+  api.delete('/keys/:id', async (c) => {
+    await fleet.apiKeyRevoke(A(c), c.req.param('id'));
+    return c.json({ revoked: c.req.param('id') });
   });
 
   app.route('/api/v1', api);

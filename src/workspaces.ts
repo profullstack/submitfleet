@@ -32,16 +32,26 @@ export async function createApiKey(db: Db, workspaceId: string, role: Role, labe
 
 export async function authenticate(db: Db, token: string | undefined | null): Promise<Actor | null> {
   if (!token) return null;
-  const r = await one<{ id: string; workspace_id: string; role: Role }>(
+  const r = await one<{ id: string; workspace_id: string; role: Role; expires_at: string | null; last_used_at: string | null; user_id: string | null }>(
     db,
-    'SELECT id, workspace_id, role FROM api_keys WHERE token_hash = ? AND revoked_at IS NULL',
+    'SELECT id, workspace_id, role, expires_at, last_used_at, user_id FROM api_keys WHERE token_hash = ? AND revoked_at IS NULL',
     sha256(token),
   );
-  return r ? { id: r.id, workspaceId: r.workspace_id, role: r.role } : null;
+  if (!r || (r.expires_at && Date.parse(r.expires_at) <= Date.now())) return null;
+  // Coarse last-used stamp (once a minute) so a busy agent does not write on every call.
+  if (!r.last_used_at || Date.now() - Date.parse(r.last_used_at) > 60_000) await run(db, 'UPDATE api_keys SET last_used_at = ? WHERE id = ?', nowIso(), r.id);
+  // A token issued to a signed-in person (CLI login) acts as that person; other keys act as themselves.
+  return { id: r.user_id ? `user:${r.user_id}` : r.id, workspaceId: r.workspace_id, role: r.role };
 }
 
 export async function revokeApiKey(db: Db, workspaceId: string, id: string): Promise<void> {
-  await run(db, 'UPDATE api_keys SET revoked_at = ? WHERE id = ? AND workspace_id = ?', nowIso(), id, workspaceId);
+  const n = await run(db, 'UPDATE api_keys SET revoked_at = ? WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL', nowIso(), id, workspaceId);
+  if (!n) throw new SubmitFleetError('not_found', 'key');
+}
+
+/** Long-lived keys a person made for agents and scripts (OAuth access tokens are not listed). */
+export async function listApiKeys(db: Db, workspaceId: string) {
+  return all(db, "SELECT id, role, label, created_at, last_used_at FROM api_keys WHERE workspace_id = ? AND revoked_at IS NULL AND label NOT LIKE 'oauth:%' ORDER BY created_at DESC", workspaceId);
 }
 
 export function requireOwner(actor: Actor): void {

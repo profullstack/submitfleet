@@ -233,4 +233,116 @@ CREATE TABLE outcomes (
 )
 `,
   },
+  {
+    version: 2,
+    sql: `
+ALTER TABLE destinations ADD COLUMN channel TEXT;
+ALTER TABLE destinations ADD COLUMN description TEXT;
+ALTER TABLE destinations ADD COLUMN audience TEXT;
+ALTER TABLE destinations ADD COLUMN eligibility TEXT;
+ALTER TABLE destinations ADD COLUMN link_type TEXT;
+ALTER TABLE destinations ADD COLUMN domain_rating INTEGER;
+ALTER TABLE destinations ADD COLUMN monthly_traffic INTEGER;
+ALTER TABLE destinations ADD COLUMN website_url TEXT;
+ALTER TABLE destinations ADD COLUMN logo_url TEXT;
+CREATE INDEX destinations_channel ON destinations (channel, archived);
+
+ALTER TABLE campaigns ADD COLUMN mode TEXT NOT NULL DEFAULT 'all';
+ALTER TABLE campaigns ADD COLUMN channels_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE campaigns ADD COLUMN include_unknown_pricing INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE campaign_targets ADD COLUMN mode TEXT;
+ALTER TABLE intents ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto';
+ALTER TABLE intents ADD COLUMN note TEXT;
+
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT,
+  password_hash TEXT,
+  email_verified_at TEXT,
+  failed_logins INTEGER NOT NULL DEFAULT 0,
+  locked_until TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE memberships (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  role TEXT NOT NULL CHECK (role IN ('owner', 'member')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, workspace_id)
+);
+
+CREATE TABLE sessions (
+  id_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  user_agent TEXT
+);
+CREATE INDEX sessions_user ON sessions (user_id);
+
+CREATE TABLE passkeys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  public_key TEXT NOT NULL,
+  counter INTEGER NOT NULL DEFAULT 0,
+  transports_json TEXT NOT NULL DEFAULT '[]',
+  name TEXT,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT
+);
+CREATE INDEX passkeys_user ON passkeys (user_id);
+
+CREATE TABLE auth_challenges (
+  id TEXT PRIMARY KEY,
+  challenge TEXT NOT NULL,
+  user_id TEXT,
+  purpose TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE TABLE email_tokens (
+  token_hash TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  data_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE INDEX email_tokens_email ON email_tokens (email, created_at);
+
+CREATE TABLE oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  client_id TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  code_challenge TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
+CREATE TABLE oauth_refresh (
+  token_hash TEXT PRIMARY KEY,
+  family TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  client_id TEXT NOT NULL,
+  access_key_id TEXT,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX oauth_refresh_family ON oauth_refresh (family);
+
+ALTER TABLE api_keys ADD COLUMN user_id TEXT REFERENCES users(id);
+ALTER TABLE api_keys ADD COLUMN expires_at TEXT;
+ALTER TABLE api_keys ADD COLUMN last_used_at TEXT;
+ALTER TABLE products ADD COLUMN logo_mime TEXT
+`,
+  },
 ];

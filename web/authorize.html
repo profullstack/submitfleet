@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SubmitFleet: authorize</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<main class="auth-page">
+  <div class="auth-box">
+    <a class="brand" href="/"><img src="/assets/icon.svg" alt=""> SubmitFleet</a>
+    <h1>Allow {{CLIENT}}?</h1>
+    <div class="card">
+      <p><b>{{CLIENT}}</b> on your computer wants to use your SubmitFleet account (<b>{{EMAIL}}</b>): your products, campaigns and reports.</p>
+      <p class="muted small">It can plan campaigns and ask for approval. Only allow this if you just ran <code>submitfleet login</code>.</p>
+      <form method="post" action="/oauth/authorize">
+        {{HIDDEN}}
+        <div class="btn-row">
+          <button class="btn primary" name="decision" value="allow" type="submit">Allow</button>
+          <button class="btn" name="decision" value="deny" type="submit">Deny</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</main>
+</body>
+</html>

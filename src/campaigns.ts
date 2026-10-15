@@ -1,9 +1,10 @@
 import type { Adapter } from './adapters/types.js';
 import { createBudget } from './budgets.js';
-import { listDestinations, qualify, RELEASE_MINIMUM, type Destination } from './catalog.js';
+import { assistedBlockers, DEFAULT_CHANNELS, listDestinations, qualify, RELEASE_MINIMUM, type AssistedPolicy, type Destination } from './catalog.js';
 import { all, one, run, type Db } from './db.js';
 import { requireProduct, type Product } from './products.js';
 import { appendEvent } from './ledger.js';
+import { relevance } from './relevance.js';
 import { hashValue, newId, nowIso, parseJson, sha256, SubmitFleetError } from './util.js';
 import { requireOwner, usableAccount, type Actor } from './workspaces.js';
 
@@ -25,12 +26,18 @@ export interface PlanInput {
   releaseScope?: string;
   /** Restrict to these destination slugs; otherwise every catalog entry is considered. */
   destinations?: string[];
+  /** 'all' (default) plans assisted targets where no adapter qualifies; 'auto_only' is the strict unattended mode. */
+  mode?: 'all' | 'auto_only';
+  /** Source channels for assisted targets (default: directory, product-launch-site). */
+  channels?: string[];
+  includeUnknownPricing?: boolean;
 }
 
 export interface TargetPlan {
   destination: string;
   listing_group: string;
   executable: boolean;
+  mode: 'auto' | 'assisted' | null;
   blockers: string[];
   account_id: string | null;
   payload_hash: string | null;
@@ -48,6 +55,8 @@ export interface Campaign {
   earliest_date: string | null;
   latest_date: string | null;
   executable_count: number;
+  mode: 'all' | 'auto_only';
+  channels: string[];
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -62,6 +71,8 @@ export interface CampaignPlan {
     account_ready: number;
     not_duplicate: number;
     executable: number;
+    auto: number;
+    assisted: number;
     min_executable: number;
   };
   targets: TargetPlan[];
@@ -80,6 +91,7 @@ function rowToCampaign(r: Record<string, unknown>): Campaign {
     min_executable: Number(r.min_executable),
     spend_limit_cents: Number(r.spend_limit_cents),
     executable_count: Number(r.executable_count),
+    channels: parseJson(r.channels_json, []),
   };
 }
 
@@ -125,12 +137,14 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Builds (or rebuilds) a campaign plan. Re-planning invalidates any prior approval. */
 export async function planCampaign(db: Db, actor: Actor, input: PlanInput, deps: PlanDeps, campaignId?: string): Promise<CampaignPlan> {
   const product = await requireProduct(db, actor.workspaceId, input.productId);
-  const min = input.minExecutableDestinations ?? RELEASE_MINIMUM;
+  const mode = input.mode ?? 'all';
+  const min = input.minExecutableDestinations ?? (mode === 'auto_only' ? RELEASE_MINIMUM : 1);
   if (!Number.isInteger(min) || min < 1) throw new SubmitFleetError('invalid_request', 'min_executable_destinations must be a positive integer');
   for (const d of [input.earliestDate, input.latestDate]) if (d && !DATE_RE.test(d)) throw new SubmitFleetError('invalid_request', 'dates must be YYYY-MM-DD');
   const releaseScope = input.releaseScope ?? 'initial';
   const now = deps.now?.() ?? Date.now();
   const installed = new Set(deps.adapters.keys());
+  const policy: AssistedPolicy = { channels: input.channels ?? DEFAULT_CHANNELS, includeUnknownPricing: !!input.includeUnknownPricing };
 
   let destinations = await listDestinations(db, { limit: 100_000 });
   if (input.destinations?.length) {
@@ -138,54 +152,70 @@ export async function planCampaign(db: Db, actor: Actor, input: PlanInput, deps:
     destinations = destinations.filter((d) => want.has(d.slug));
   }
 
-  const counts = { considered: 0, release_qualifying: 0, product_eligible: 0, account_ready: 0, not_duplicate: 0, executable: 0, min_executable: min };
+  const counts = { considered: 0, release_qualifying: 0, product_eligible: 0, account_ready: 0, not_duplicate: 0, executable: 0, auto: 0, assisted: 0, min_executable: min };
   const seenGroups = new Set<string>();
   const targets: (TargetPlan & { destination_id: string; payload: Record<string, unknown> | null })[] = [];
 
   for (const d of destinations) {
     counts.considered++;
-    const blockers: string[] = [];
-    const q = qualify(d, { now, installedAdapters: installed });
-    blockers.push(...q.blockers);
-    if (q.stages.release_qualifying) counts.release_qualifying++;
-
-    if (seenGroups.has(d.listing_group)) blockers.push('same_listing_group_as_other_target');
-    if (!product.approved_at) blockers.push('product_facts_unapproved');
-    if (!productFits(product, d)) blockers.push('category_mismatch');
-    const adapter = d.adapter_id ? deps.adapters.get(d.adapter_id) : undefined;
-    if (adapter) for (const issue of adapter.validate(product, d)) blockers.push(`${issue.code}:${issue.field}`);
-    const eligible = blockers.length === 0;
-    if (eligible) counts.product_eligible++;
-
-    const account = await usableAccount(db, actor.workspaceId, d.id, now);
-    if (!account && d.account_requirement !== 'none') blockers.push('account_not_ready');
-    else if (eligible) counts.account_ready++;
-
+    const common: string[] = [];
+    if (!product.approved_at) common.push('product_facts_unapproved');
     const key = dedupeKey(actor.workspaceId, product, d, releaseScope);
     const dup = await one<{ id: string; state: string }>(db, 'SELECT id, state FROM intents WHERE dedupe_key = ? AND dedupe_active = 1', key);
-    if (dup) blockers.push(`duplicate_existing_submission:${dup.state}`);
-    else if (eligible && account) counts.not_duplicate++;
+    if (dup) common.push(`duplicate_existing_submission:${dup.state}`);
+    if (seenGroups.has(d.listing_group)) common.push('same_listing_group_as_other_target');
 
+    // Unattended path: every release-gate condition plus product fit, account and adapter validation.
+    const auto: string[] = [...qualify(d, { now, installedAdapters: installed }).blockers];
+    if (auto.length === 0) counts.release_qualifying++;
+    if (!productFits(product, d)) auto.push('category_mismatch');
+    const adapter = d.adapter_id ? deps.adapters.get(d.adapter_id) : undefined;
+    if (adapter) for (const issue of adapter.validate(product, d)) auto.push(`${issue.code}:${issue.field}`);
+    if (auto.length === 0 && common.length === 0) counts.product_eligible++;
+    const account = await usableAccount(db, actor.workspaceId, d.id, now);
+    if (!account && d.account_requirement !== 'none') auto.push('account_not_ready');
+    else if (auto.length === 0 && common.length === 0) counts.account_ready++;
+    if (!dup && auto.length === 0) counts.not_duplicate++;
+
+    let targetMode: 'auto' | 'assisted' | null = null;
     let payload: Record<string, unknown> | null = null;
-    if (blockers.length === 0 && adapter) {
+    let blockers: string[];
+    if (common.length === 0 && auto.length === 0 && adapter) {
       try {
         payload = await adapter.prepare({ product, destination: d, earliestDate: input.earliestDate, latestDate: input.latestDate, readAsset: deps.readAsset });
+        targetMode = 'auto';
       } catch (e) {
-        blockers.push(`prepare_failed:${e instanceof SubmitFleetError ? e.code : 'error'}`);
+        auto.push(`prepare_failed:${e instanceof SubmitFleetError ? e.code : 'error'}`);
       }
     }
-    const executable = blockers.length === 0 && payload !== null;
-    if (executable) {
+    if (!targetMode && mode === 'all') {
+      const assisted = assistedBlockers(d, policy);
+      // Without an explicit pick, a niche or platform the product does not match is left out.
+      if (!input.destinations?.length) {
+        const r = relevance(product, d);
+        if (r.fit === 'weak') assisted.push(`not_a_fit:${r.reason}`);
+      }
+      if (common.length === 0 && assisted.length === 0) {
+        targetMode = 'assisted';
+        payload = { assisted: true, destination: d.slug };
+      }
+      blockers = targetMode ? [] : [...common, ...assisted, ...(assisted.length ? [] : auto.map((a) => `auto:${a}`))];
+    } else {
+      blockers = targetMode ? [] : [...common, ...auto];
+    }
+    if (targetMode) {
       counts.executable++;
+      counts[targetMode]++;
       seenGroups.add(d.listing_group);
     }
     targets.push({
       destination: d.slug,
       destination_id: d.id,
       listing_group: d.listing_group,
-      executable,
+      executable: targetMode !== null,
+      mode: targetMode,
       blockers,
-      account_id: account?.id ?? null,
+      account_id: targetMode === 'auto' ? (account?.id ?? null) : null,
       payload,
       payload_hash: payload ? hashValue(payload) : null,
     });
@@ -194,6 +224,7 @@ export async function planCampaign(db: Db, actor: Actor, input: PlanInput, deps:
   const status = counts.executable >= min ? 'draft' : 'coverage_insufficient';
   const ts = nowIso();
   const id = campaignId ?? newId('cmp');
+  const channelsJson = JSON.stringify(policy.channels);
   if (campaignId) {
     const c = await getCampaign(db, actor.workspaceId, campaignId);
     if (!['draft', 'coverage_insufficient', 'awaiting_approval', 'approved'].includes(c.status)) {
@@ -203,23 +234,23 @@ export async function planCampaign(db: Db, actor: Actor, input: PlanInput, deps:
     await run(db, 'DELETE FROM campaign_targets WHERE campaign_id = ?', id);
     await run(
       db,
-      'UPDATE campaigns SET status = ?, min_executable = ?, release_scope = ?, spend_limit_cents = ?, earliest_date = ?, latest_date = ?, executable_count = ?, updated_at = ? WHERE id = ?',
-      status, min, releaseScope, input.spendLimitCents ?? 0, input.earliestDate, input.latestDate, counts.executable, ts, id,
+      'UPDATE campaigns SET status = ?, min_executable = ?, release_scope = ?, spend_limit_cents = ?, earliest_date = ?, latest_date = ?, executable_count = ?, mode = ?, channels_json = ?, include_unknown_pricing = ?, updated_at = ? WHERE id = ?',
+      status, min, releaseScope, input.spendLimitCents ?? 0, input.earliestDate, input.latestDate, counts.executable, mode, channelsJson, policy.includeUnknownPricing ? 1 : 0, ts, id,
     );
   } else {
     await run(
       db,
-      `INSERT INTO campaigns (id, workspace_id, product_id, status, min_executable, release_scope, policy_json, spend_limit_cents, earliest_date, latest_date, executable_count, created_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO campaigns (id, workspace_id, product_id, status, min_executable, release_scope, policy_json, spend_limit_cents, earliest_date, latest_date, executable_count, mode, channels_json, include_unknown_pricing, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id, actor.workspaceId, product.id, status, min, releaseScope, JSON.stringify(DEFAULT_POLICY), input.spendLimitCents ?? 0,
-      input.earliestDate, input.latestDate, counts.executable, actor.id, ts, ts,
+      input.earliestDate, input.latestDate, counts.executable, mode, channelsJson, policy.includeUnknownPricing ? 1 : 0, actor.id, ts, ts,
     );
   }
   for (const t of targets) {
     await run(
       db,
-      'INSERT INTO campaign_targets (id, campaign_id, destination_id, account_id, executable, blockers_json, payload_json, payload_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      newId('tgt'), id, t.destination_id, t.account_id, t.executable ? 1 : 0, JSON.stringify(t.blockers), t.payload ? JSON.stringify(t.payload) : null, t.payload_hash,
+      'INSERT INTO campaign_targets (id, campaign_id, destination_id, account_id, executable, blockers_json, payload_json, payload_hash, mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      newId('tgt'), id, t.destination_id, t.account_id, t.executable ? 1 : 0, JSON.stringify(t.blockers), t.payload ? JSON.stringify(t.payload) : null, t.payload_hash, t.mode,
     );
   }
   return {
@@ -239,12 +270,13 @@ interface TargetRow {
   blockers_json: string;
   payload_json: string | null;
   payload_hash: string | null;
+  mode: 'auto' | 'assisted' | null;
 }
 
 async function targetRows(db: Db, campaignId: string): Promise<TargetRow[]> {
   return all<TargetRow>(
     db,
-    `SELECT t.destination_id, d.slug, d.adapter_id, d.adapter_version, t.account_id, t.executable, t.blockers_json, t.payload_json, t.payload_hash
+    `SELECT t.destination_id, d.slug, d.adapter_id, d.adapter_version, t.account_id, t.executable, t.blockers_json, t.payload_json, t.payload_hash, t.mode
      FROM campaign_targets t JOIN destinations d ON d.id = t.destination_id WHERE t.campaign_id = ? ORDER BY d.slug`,
     campaignId,
   );
@@ -255,7 +287,7 @@ export async function approvalScope(db: Db, c: Campaign): Promise<Record<string,
   const product = await requireProduct(db, c.workspace_id, c.product_id);
   const targets = (await targetRows(db, c.id))
     .filter((t) => Number(t.executable) === 1)
-    .map((t) => ({ destination: t.slug, adapter: `${t.adapter_id}@${t.adapter_version}`, account_id: t.account_id, payload_hash: t.payload_hash }));
+    .map((t) => ({ destination: t.slug, mode: t.mode, adapter: t.mode === 'auto' ? `${t.adapter_id}@${t.adapter_version}` : null, account_id: t.account_id, payload_hash: t.payload_hash }));
   return {
     campaign_id: c.id,
     product: { id: product.id, canonical_key: product.canonical_key, content_hash: productContentHash(product), facts_approved_at: product.approved_at },
@@ -277,7 +309,7 @@ export async function previewCampaign(db: Db, workspaceId: string, id: string) {
   return {
     campaign: c,
     scope_hash: hashValue(scope),
-    executable: rows.filter((t) => Number(t.executable) === 1).map((t) => ({ destination: t.slug, account_id: t.account_id, payload: parseJson(t.payload_json, {}) })),
+    executable: rows.filter((t) => Number(t.executable) === 1).map((t) => ({ destination: t.slug, mode: t.mode, account_id: t.account_id, payload: parseJson(t.payload_json, {}) })),
     blocked: rows.filter((t) => Number(t.executable) !== 1).map((t) => ({ destination: t.slug, blockers: parseJson<string[]>(t.blockers_json, []) })),
   };
 }
@@ -355,11 +387,14 @@ export async function runCampaign(db: Db, actor: Actor, campaignId: string): Pro
       // Intent is persisted before any external action is attempted.
       await run(
         db,
-        `INSERT INTO intents (id, workspace_id, campaign_id, product_id, destination_id, account_id, approval_id, dedupe_key, state, payload_json, payload_hash, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-        id, actor.workspaceId, campaignId, product.id, t.destination_id, t.account_id, approval.id, key, t.payload_json, t.payload_hash, ts, ts,
+        `INSERT INTO intents (id, workspace_id, campaign_id, product_id, destination_id, account_id, approval_id, dedupe_key, state, reason_code, mode, payload_json, payload_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, actor.workspaceId, campaignId, product.id, t.destination_id, t.account_id, approval.id, key,
+        // Assisted work waits for the owner; workers only ever claim 'queued'.
+        t.mode === 'assisted' ? 'needs_human' : 'queued', t.mode === 'assisted' ? 'assisted' : null, t.mode ?? 'auto',
+        t.payload_json, t.payload_hash, ts, ts,
       );
-      await appendEvent(db, id, 'queued', { to: 'queued' });
+      await appendEvent(db, id, t.mode === 'assisted' ? 'assisted_ready' : 'queued', { to: t.mode === 'assisted' ? 'needs_human' : 'queued' });
       queued++;
     } catch (e) {
       if (String(e).includes('UNIQUE')) duplicates.push(t.slug);

@@ -49,6 +49,16 @@ export interface Destination {
   source: string | null;
   source_license: string | null;
   archived: boolean;
+  /** Raw channel from the source catalog: directory, product-launch-site, citation, community, ... */
+  channel: string | null;
+  description: string | null;
+  audience: string | null;
+  eligibility: string | null;
+  link_type: string | null;
+  domain_rating: number | null;
+  monthly_traffic: number | null;
+  website_url: string | null;
+  logo_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -67,6 +77,8 @@ export function rowToDestination(r: Row): Destination {
     queue_limit_per_account: r.queue_limit_per_account == null ? null : Number(r.queue_limit_per_account),
     queue_window_hours: r.queue_window_hours == null ? null : Number(r.queue_window_hours),
     cooldown_hours: r.cooldown_hours == null ? null : Number(r.cooldown_hours),
+    domain_rating: r.domain_rating == null ? null : Number(r.domain_rating),
+    monthly_traffic: r.monthly_traffic == null ? null : Number(r.monthly_traffic),
   };
 }
 
@@ -79,6 +91,7 @@ const REVIEWED_FIELDS = [
   'adapter_id', 'adapter_version', 'adapter_health', 'health_reason', 'contract_tested_at',
   'live_tested_at', 'live_evidence_ref', 'reconcile_support', 'reconcile_limitation',
   'queue_limit_per_account', 'queue_window_hours', 'cooldown_hours', 'disabled', 'source', 'source_license',
+  'channel', 'description', 'audience', 'eligibility', 'link_type', 'domain_rating', 'monthly_traffic', 'website_url', 'logo_url',
 ] as const;
 
 // Imports are discovery input only: they may never set anything that enables execution.
@@ -159,18 +172,29 @@ export async function getDestination(db: Db, idOrSlug: string): Promise<Destinat
   return r ? rowToDestination(r) : null;
 }
 
-export async function listDestinations(db: Db, opts: { query?: string; includeArchived?: boolean; limit?: number; offset?: number } = {}): Promise<Destination[]> {
+export async function listDestinations(
+  db: Db,
+  opts: { query?: string; includeArchived?: boolean; limit?: number; offset?: number; channels?: string[]; pricing?: string[] } = {},
+): Promise<Destination[]> {
   const where: string[] = [];
   const args: unknown[] = [];
   if (!opts.includeArchived) where.push('archived = 0');
+  if (opts.channels?.length) {
+    where.push(`channel IN (${opts.channels.map(() => '?').join(', ')})`);
+    args.push(...opts.channels);
+  }
+  if (opts.pricing?.length) {
+    where.push(`fee_status IN (${opts.pricing.map(() => '?').join(', ')})`);
+    args.push(...opts.pricing);
+  }
   if (opts.query) {
-    where.push('(name LIKE ? OR slug LIKE ? OR canonical_domain LIKE ? OR categories_json LIKE ?)');
+    where.push('(name LIKE ? OR slug LIKE ? OR canonical_domain LIKE ? OR categories_json LIKE ? OR description LIKE ?)');
     const q = `%${opts.query}%`;
-    args.push(q, q, q, q);
+    args.push(q, q, q, q, q);
   }
   const rows = await all<Row>(
     db,
-    `SELECT * FROM destinations ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY slug LIMIT ? OFFSET ?`,
+    `SELECT * FROM destinations ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY COALESCE(domain_rating, -1) DESC, slug LIMIT ? OFFSET ?`,
     ...args,
     opts.limit ?? 500,
     opts.offset ?? 0,
@@ -357,4 +381,148 @@ export async function importDiscovery(db: Db, records: ImportRecord[], source: s
     created++;
   }
   return { created, skipped };
+}
+
+// ── Curated catalog import (awesome-submitlist, CC0) ─────────────────────────
+
+export interface SubmitlistRecord {
+  slug: string;
+  name: string;
+  type: string;
+  website_url: string;
+  submission_url: string | null;
+  logo_url?: string | null;
+  description?: string | null;
+  audience?: string | null;
+  eligibility?: string | null;
+  pricing: 'free' | 'paid' | 'unknown' | string;
+  pricing_note?: string | null;
+  link_type?: string | null;
+  domain_rating?: number | null;
+  monthly_traffic?: number | null;
+  categories?: string[];
+}
+
+const KIND_BY_CHANNEL: Record<string, string> = { directory: 'directory', 'product-launch-site': 'launch', citation: 'directory' };
+const FEE_BY_PRICING: Record<string, string> = { free: 'source_labeled_free', paid: 'paid', unknown: 'unknown' };
+
+/**
+ * Imports or refreshes the curated catalog. Only descriptive, source-owned fields are
+ * written; automation, permission and live-test evidence are never touched, so an
+ * import can make a destination available for assisted submission but never for
+ * unattended execution. A record whose domain already exists is refreshed in place.
+ */
+export async function importSubmitlist(db: Db, records: SubmitlistRecord[], source: string): Promise<{ created: number; updated: number; skipped: number }> {
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  const now = nowIso();
+  for (const r of records) {
+    let domain: string;
+    let group: string;
+    try {
+      const u = new URL(r.website_url);
+      domain = normalizeDomain(u.hostname);
+      // Several surfaces can share a host (reddit.com/r/SaaS, reddit.com/r/startups): the
+      // independent listing group is host + path, which is just the host for most sites.
+      const path = u.pathname.replace(/\/+$/, '').toLowerCase();
+      group = `${domain}${path}`;
+    } catch {
+      skipped++;
+      continue;
+    }
+    const fee = FEE_BY_PRICING[r.pricing] ?? 'unknown';
+    const fields = {
+      name: r.name,
+      channel: r.type,
+      description: r.description ?? null,
+      audience: r.audience ?? null,
+      eligibility: r.eligibility ?? null,
+      link_type: r.link_type ?? null,
+      domain_rating: r.domain_rating ?? null,
+      monthly_traffic: r.monthly_traffic ?? null,
+      website_url: r.website_url,
+      logo_url: r.logo_url ?? null,
+      submission_url: r.submission_url ?? r.website_url,
+      categories_json: JSON.stringify(r.categories ?? []),
+      fee_conditions: r.pricing_note ?? null,
+      source,
+      source_license: 'CC0-1.0',
+    };
+    const existing = await one<{ id: string; fee_status: string }>(db, 'SELECT id, fee_status FROM destinations WHERE slug = ? OR listing_group = ? ORDER BY slug = ? DESC LIMIT 1', r.slug, group, r.slug);
+    if (existing) {
+      const cols = Object.keys(fields);
+      // A reviewed verified_free status is ours; the source label never downgrades or overrides it.
+      const feeSql = existing.fee_status === 'verified_free' ? '' : ', fee_status = ?';
+      await run(
+        db,
+        `UPDATE destinations SET ${cols.map((c) => `${c} = ?`).join(', ')}${feeSql}, updated_at = ? WHERE id = ?`,
+        ...Object.values(fields),
+        ...(feeSql ? [fee] : []),
+        now,
+        existing.id,
+      );
+      updated++;
+    } else {
+      const all = { ...fields, kind: KIND_BY_CHANNEL[r.type] ?? 'other', fee_status: fee, canonical_domain: domain, listing_group: group };
+      const names = ['id', 'slug', ...Object.keys(all), 'created_at', 'updated_at'];
+      await run(
+        db,
+        `INSERT INTO destinations (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`,
+        newId('dst'),
+        r.slug,
+        ...Object.values(all),
+        now,
+        now,
+      );
+      created++;
+    }
+  }
+  return { created, updated, skipped };
+}
+
+// ── Assisted submission eligibility ──────────────────────────────────────────
+
+export const DEFAULT_CHANNELS = ['directory', 'product-launch-site'];
+
+export interface AssistedPolicy {
+  channels: string[];
+  includeUnknownPricing: boolean;
+}
+
+/** Blockers for an owner-performed (assisted) submission: free routes with a submit page. */
+export function assistedBlockers(d: Destination, policy: AssistedPolicy): string[] {
+  const b: string[] = [];
+  if (d.archived) b.push('archived');
+  if (d.disabled) b.push('disabled');
+  if (!d.submission_url) b.push('no_submission_url');
+  if (d.fee_status === 'paid') b.push('paid_route');
+  else if (d.fee_status === 'conditional_free') b.push('conditional_free');
+  else if (d.fee_status === 'unknown' && !policy.includeUnknownPricing) b.push('pricing_unknown');
+  if (d.backlink_required) b.push('backlink_required');
+  if (d.quality_decision === 'rejected') b.push('quality_rejected');
+  const channel = d.channel ?? (d.kind === 'launch' ? 'product-launch-site' : d.kind);
+  if (policy.channels.length && !policy.channels.includes(channel)) b.push(`channel_not_selected:${channel}`);
+  return b;
+}
+
+export interface CatalogStats {
+  total: number;
+  free: number;
+  by_channel: Record<string, number>;
+  automated: number;
+}
+
+export async function catalogStats(db: Db, installed: Set<string>): Promise<CatalogStats> {
+  const ds = await listDestinations(db, { limit: 100_000 });
+  const by: Record<string, number> = {};
+  let free = 0;
+  let automated = 0;
+  for (const d of ds) {
+    const c = d.channel ?? d.kind;
+    by[c] = (by[c] ?? 0) + 1;
+    if (d.fee_status === 'source_labeled_free' || d.fee_status === 'verified_free') free++;
+    if (qualify(d, { installedAdapters: installed }).stages.release_qualifying) automated++;
+  }
+  return { total: ds.length, free, by_channel: by, automated };
 }

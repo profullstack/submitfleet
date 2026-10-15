@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SubmitFleet: sign in</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<main class="auth-page">
+  <div class="auth-box">
+    <a class="brand" href="/"><img src="/assets/icon.svg" alt=""> SubmitFleet</a>
+    <h1 id="title">Sign in</h1>
+    <p class="muted" id="subtitle">Welcome back.</p>
+    <div class="card">
+      <div id="msg" role="status" aria-live="polite"></div>
+      <button class="btn primary block lg" id="passkey" type="button">Sign in with a passkey</button>
+      <div class="divider">or</div>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-password" aria-selected="true" type="button">Password</button>
+        <button role="tab" id="tab-link" aria-selected="false" type="button">Email me a link</button>
+      </div>
+      <form id="form" novalidate>
+        <div class="field" id="name-field" hidden>
+          <label for="name">Your name <span class="muted">(optional)</span></label>
+          <input id="name" name="name" type="text" autocomplete="name" maxlength="80">
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="username webauthn" required>
+        </div>
+        <div class="field" id="password-field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" minlength="10">
+          <div class="hint" id="password-hint" hidden>At least 10 characters. You can add a passkey after signing up.</div>
+        </div>
+        <button class="btn primary block" id="submit" type="submit">Sign in</button>
+      </form>
+    </div>
+    <p class="muted small" id="switch"></p>
+  </div>
+</main>
+<script src="/assets/auth.js" type="module"></script>
+</body>
+</html>

@@ -12,6 +12,8 @@ import { buildApp } from './http.js';
 import { buildMcpServer } from './mcp.js';
 import { SubmitFleet } from './service.js';
 import { runTui } from './tui.js';
+import { resendMailer } from './mail.js';
+import { accessToken, DEFAULT_URL, login, logout, mcpStdioProxy, readAuth, remote } from './remote.js';
 import { SubmitFleetError } from './util.js';
 import { createApiKey, ensureDefaultWorkspace, type Actor, type Role } from './workspaces.js';
 
@@ -21,7 +23,12 @@ const HELP = `submitfleet - coordinated launch and directory submissions with pr
 
 Usage: submitfleet <command> [options]
 
-Setup
+Account (hosted at submitfleet.com, or --url for your own server)
+  login [--url URL] [--no-browser]       sign in through your browser (OAuth 2.1 + PKCE); later commands use your account
+  logout | whoami
+  --local                                ignore the signed-in account and use the local database
+
+Setup (self-hosted)
   init                                   create the local workspace, secret key and an owner API key
   doctor                                 non-mutating health check
   keys create --role owner|agent [--label L]
@@ -44,8 +51,10 @@ Accounts
   accounts list | accounts disconnect ID
 
 Campaigns
-  campaign plan --product ID [--free-only] [--min-executable-destinations 100] [--spend-limit-cents 0]
-                [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--dest SLUG]...
+  campaign plan --product ID [--free-only] [--auto-only] [--min-executable-destinations N] [--spend-limit-cents 0]
+                [--channel directory|product-launch-site|citation|community|newsletter|subreddit|marketplace]...
+                [--include-unknown-pricing] [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--dest SLUG]...
+                (assisted targets are included unless --auto-only; --auto-only defaults to a 100 minimum)
   campaign list | preview ID | approve ID | run ID | status ID [--json] | pause ID | cancel ID
   pause-all | resume
   queue                                  jobs waiting for a person
@@ -122,6 +131,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       email: { type: 'string' },
       product: { type: 'string' },
       'free-only': { type: 'boolean' },
+      'auto-only': { type: 'boolean' },
+      channel: { type: 'string', multiple: true },
+      'include-unknown-pricing': { type: 'boolean' },
       'min-executable-destinations': { type: 'string' },
       'spend-limit-cents': { type: 'string' },
       from: { type: 'string' },
@@ -137,6 +149,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       'no-worker': { type: 'boolean' },
       stdio: { type: 'boolean' },
       'dry-run': { type: 'boolean' },
+      local: { type: 'boolean' },
+      url: { type: 'string' },
+      'no-browser': { type: 'boolean' },
     },
   });
   const [cmd, sub, arg] = pos;
@@ -147,6 +162,28 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   if (cmd === 'version' || cmd === '--version') {
     out(JSON.parse(readFileSync(join(packageRoot(), 'package.json'), 'utf8')).version);
     return EXIT.ok;
+  }
+
+  // Account commands, and the hosted account whenever the CLI is signed in.
+  if (cmd === 'login') {
+    try {
+      const a = await login(String(o.url ?? process.env.SUBMITFLEET_URL ?? DEFAULT_URL), log, { open: !o['no-browser'] });
+      const who = (await remote('GET', '/api/me')) as { user?: { email?: string } };
+      out({ signed_in: true, url: a.url, email: who.user?.email ?? null });
+      return EXIT.ok;
+    } catch (e) {
+      out({ error: e instanceof SubmitFleetError ? e.code : 'login_failed', message: e instanceof Error ? e.message : String(e) });
+      return EXIT.error;
+    }
+  }
+  if (cmd === 'logout') return out({ signed_out: await logout() }), EXIT.ok;
+  const remoteMode = !!readAuth() && !o.local && !process.env.SUBMITFLEET_LOCAL;
+  if (remoteMode) {
+    const r = await runRemote(cmd, sub, arg, o);
+    if (r !== null) return r;
+  } else if (cmd === 'whoami') {
+    log('Not signed in: run submitfleet login (this CLI is using its local database).');
+    return EXIT.error;
   }
 
   const fleet = await SubmitFleet.open(loadConfig());
@@ -177,7 +214,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         return EXIT.ok;
       }
       case 'catalog': {
-        if (sub === 'seed') return out({ seeded: await seedCatalog(fleet, owner, false) }), EXIT.ok;
+        if (sub === 'seed') return out(await fleet.loadBundledCatalog()), EXIT.ok;
         if (sub === 'search') {
           const ds = await fleet.catalogSearch(arg);
           out(o.json ? ds : ds.map((d) => `${d.slug}\t${d.kind}\t${d.fee_status}\t${d.automation_method}\t${d.adapter_health}`).join('\n') || 'no destinations');
@@ -263,6 +300,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
             earliestDate: o.from as string | undefined,
             latestDate: o.to as string | undefined,
             destinations: o.dest as string[] | undefined,
+            mode: o['auto-only'] ? 'auto_only' : 'all',
+            channels: o.channel as string[] | undefined,
+            includeUnknownPricing: !!o['include-unknown-pricing'],
           });
           out(o.json ? plan : { campaign: plan.campaign.id, status: plan.campaign.status, counts: plan.counts, blocked: plan.targets.filter((t) => !t.executable).slice(0, 50) });
           return plan.campaign.status === 'coverage_insufficient' ? EXIT.gate : EXIT.ok;
@@ -325,10 +365,15 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         return EXIT.ok;
       }
       case 'serve': {
-        const added = await seedCatalog(fleet, owner, true);
-        if (added) log(`seeded ${added} missing catalog record(s)`);
+        const loaded = await fleet.loadBundledCatalog();
+        log(`catalog: ${loaded.created} added, ${loaded.updated} refreshed, ${loaded.seeded} reviewed records applied`);
         const port = num(o.port, Number(process.env.PORT ?? 8787))!;
-        const app = buildApp(fleet, { allowedOrigins: (process.env.SUBMITFLEET_ALLOWED_ORIGINS ?? '').split(',').filter(Boolean) });
+        const app = buildApp(fleet, {
+          allowedOrigins: (process.env.SUBMITFLEET_ALLOWED_ORIGINS ?? '').split(',').filter(Boolean),
+          mailer: resendMailer(process.env.RESEND_API_KEY, process.env.SUBMITFLEET_MAIL_FROM ?? 'SubmitFleet <hello@submitfleet.com>'),
+          publicOrigin: process.env.SUBMITFLEET_PUBLIC_ORIGIN,
+        });
+        if (!process.env.RESEND_API_KEY) log('RESEND_API_KEY is not set: sign-in emails are printed here instead of sent');
         serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? '127.0.0.1' });
         log(`submitfleet listening on http://${process.env.HOST ?? '127.0.0.1'}:${port}`);
         if (!o['no-worker']) await loop(fleet.worker(), Number(process.env.SUBMITFLEET_WORKER_INTERVAL_MS ?? 5000));
@@ -366,18 +411,6 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
 }
 
-/** Loads the reviewed seed records. With onlyMissing, never overwrites a record edited since. */
-async function seedCatalog(fleet: SubmitFleet, owner: Actor, onlyMissing: boolean): Promise<number> {
-  const seed = JSON.parse(readFileSync(join(packageRoot(), 'catalog', 'seed.json'), 'utf8')) as { destinations: DestinationInput[] };
-  let n = 0;
-  for (const d of seed.destinations) {
-    if (onlyMissing && (await fleet.catalogSearch(d.slug)).some((x) => x.slug === d.slug)) continue;
-    await fleet.catalogUpsert(owner, d);
-    n++;
-  }
-  return n;
-}
-
 async function loop(w: ReturnType<SubmitFleet['worker']>, intervalMs: number): Promise<void> {
   let stop = false;
   for (const sig of ['SIGINT', 'SIGTERM'] as const) process.once(sig, () => (stop = true));
@@ -405,4 +438,80 @@ if (invokedDirectly()) {
   main().then((code) => {
     process.exitCode = code;
   });
+}
+
+/** Commands served by the hosted account. Returns null for commands that only make sense locally. */
+async function runRemote(cmd: string, sub: string | undefined, arg: string | undefined, o: Record<string, unknown>): Promise<number | null> {
+  try {
+    const show = (v: unknown) => (out(v), EXIT.ok);
+    switch (cmd) {
+      case 'whoami': {
+        const a = await accessToken();
+        const me = (await remote('GET', '/api/me')) as { user?: { email?: string }; role: string; workspace_id: string };
+        return show({ url: a.url, email: me.user?.email ?? null, role: me.role, workspace_id: me.workspace_id });
+      }
+      case 'products':
+        if (sub === 'list') return show(await remote('GET', '/products'));
+        if (sub === 'get' && arg) return show(await remote('GET', `/products/${encodeURIComponent(arg)}`));
+        if (sub === 'add' && arg) {
+          const facts = (await remote('POST', '/products/extract', { url: arg }).catch(() => ({}))) as Record<string, string | null>;
+          return show(await remote('POST', '/products', {
+            url: arg,
+            name: (o.name as string) ?? facts.name ?? null,
+            tagline: (o.tagline as string) ?? facts.tagline ?? null,
+            description: (o.description as string) ?? facts.description ?? null,
+            categories: (o.category as string[]) ?? [],
+          }));
+        }
+        return null;
+      case 'catalog':
+        if (sub === 'search') return show(await remote('GET', `/catalog?limit=500${arg ? `&q=${encodeURIComponent(arg)}` : ''}`));
+        if (sub === 'get' && arg) return show(await remote('GET', `/catalog/${encodeURIComponent(arg)}`));
+        return null;
+      case 'coverage':
+        return show(await remote('GET', '/coverage'));
+      case 'campaign':
+        if (sub === 'list') return show(await remote('GET', '/campaigns'));
+        if (sub === 'plan') {
+          if (!o.product) return null;
+          return show(await remote('POST', '/campaigns', {
+            product_id: o.product,
+            min_executable_destinations: o['min-executable-destinations'] ? Number(o['min-executable-destinations']) : undefined,
+            mode: o['auto-only'] ? 'auto_only' : 'all',
+            channels: o.channel,
+            include_unknown_pricing: !!o['include-unknown-pricing'],
+            destinations: o.dest,
+          }));
+        }
+        if (!arg) return null;
+        if (sub === 'status') return show(await remote('GET', `/campaigns/${arg}/status`));
+        if (sub === 'preview') return show(await remote('GET', `/campaigns/${arg}/preview`));
+        if (sub === 'queue') return show(await remote('GET', `/campaigns/${arg}/queue`));
+        if (sub === 'run') return show(await remote('POST', `/campaigns/${arg}/run`));
+        if (sub === 'pause') return show(await remote('POST', `/campaigns/${arg}/pause`));
+        if (sub === 'cancel') return show(await remote('POST', `/campaigns/${arg}/cancel`));
+        if (sub === 'approve') {
+          log('Approve campaigns in the web app: the CLI only requests approval.');
+          return show(await remote('POST', `/campaigns/${arg}/approval-request`));
+        }
+        return null;
+      case 'queue':
+        return show(await remote('GET', '/human-queue'));
+      case 'submission':
+        if (sub === 'get' && arg) return show(await remote('GET', `/submissions/${arg}`));
+        if (sub === 'kit' && arg) return show(await remote('GET', `/submissions/${arg}/kit`));
+        return null;
+      case 'report':
+        if (sub === 'export' && arg) return show(await remote('GET', `/reports/${arg}?format=${String(o.format ?? 'markdown')}`));
+        return null;
+      case 'mcp':
+        await mcpStdioProxy();
+        return EXIT.ok;
+      default:
+        return null;
+    }
+  } catch (e) {
+    out({ error: e instanceof SubmitFleetError ? e.code : 'error', message: e instanceof Error ? e.message : String(e), detail: e instanceof SubmitFleetError ? (e.detail ?? null) : null });
+    return EXIT.error;
+  }
 }
