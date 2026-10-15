@@ -251,8 +251,10 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
     return c.json(await fleet.productSetLogo(A(c), c.req.param('id'), bytes, c.req.header('content-type') ?? ''));
   });
   api.post('/products/:id/logo/from-url', async (c) => {
-    const b = await body(c, z.object({ url: z.string().url().max(2000) }));
-    return c.json(await fleet.productLogoFromUrl(A(c), c.req.param('id'), b.url));
+    const b = await body(c, z.object({ url: z.string().url().max(2000).optional(), urls: z.array(z.string().url().max(2000)).max(10).optional() }));
+    const urls = b.urls ?? (b.url ? [b.url] : []);
+    if (!urls.length) throw new SubmitFleetError('invalid_request', 'url or urls is required');
+    return c.json(await fleet.productLogoFromCandidates(A(c), c.req.param('id'), urls));
   });
   api.get('/catalog-stats', async (c) => c.json(await fleet.catalogStats()));
   api.get('/campaigns/:id/queue', async (c) => c.json(await fleet.campaignQueue(A(c), c.req.param('id'))));

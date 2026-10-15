@@ -13,7 +13,7 @@ import { buildMcpServer } from './mcp.js';
 import { SubmitFleet } from './service.js';
 import { runTui } from './tui.js';
 import { resendMailer } from './mail.js';
-import { accessToken, DEFAULT_URL, login, logout, mcpStdioProxy, readAuth, remote } from './remote.js';
+import { accessToken, DEFAULT_URL, login, loginWithKey, logout, mcpStdioProxy, readAuth, remote } from './remote.js';
 import { SubmitFleetError } from './util.js';
 import { createApiKey, ensureDefaultWorkspace, type Actor, type Role } from './workspaces.js';
 
@@ -25,6 +25,8 @@ Usage: submitfleet <command> [options]
 
 Account (hosted at submitfleet.com, or --url for your own server)
   login [--url URL] [--no-browser]       sign in through your browser (OAuth 2.1 + PKCE); later commands use your account
+  login --key KEY | --key -              sign in with an API key from Settings (- reads it from stdin)
+                                         or set SUBMITFLEET_API_KEY (and SUBMITFLEET_URL) in the environment
   logout | whoami
   --local                                ignore the signed-in account and use the local database
 
@@ -152,6 +154,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       local: { type: 'boolean' },
       url: { type: 'string' },
       'no-browser': { type: 'boolean' },
+      key: { type: 'string' },
     },
   });
   const [cmd, sub, arg] = pos;
@@ -167,6 +170,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   // Account commands, and the hosted account whenever the CLI is signed in.
   if (cmd === 'login') {
     try {
+      const url = String(o.url ?? process.env.SUBMITFLEET_URL ?? DEFAULT_URL);
+      if (o.key !== undefined) {
+        // --key - reads the key from stdin so it stays out of shell history.
+        let key = String(o.key);
+        if (key === '-' || key === 'true') key = readFileSync(0, 'utf8').trim();
+        const a = await loginWithKey(url, key);
+        const who = (await remote('GET', '/api/me')) as { role?: string; workspace_id?: string };
+        out({ signed_in: true, url: a.url, with: 'api_key', role: who.role ?? null, workspace_id: who.workspace_id ?? null });
+        return EXIT.ok;
+      }
       const a = await login(String(o.url ?? process.env.SUBMITFLEET_URL ?? DEFAULT_URL), log, { open: !o['no-browser'] });
       const who = (await remote('GET', '/api/me')) as { user?: { email?: string } };
       out({ signed_in: true, url: a.url, email: who.user?.email ?? null });

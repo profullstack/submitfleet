@@ -286,6 +286,7 @@ async function newProduct() {
   const msg = h('div');
   const holder = h('div');
   let icon = null;
+  let iconCandidates = [];
   const fetchBtn = h('button', { class: 'btn primary', type: 'submit' }, 'Fetch details');
   const start = h('form', { class: 'card stack' }, h('label', { for: 'start-url' }, 'Product URL'), h('div', { class: 'btn-row' }, urlInput, fetchBtn), msg,
     h('button', { class: 'btn ghost sm', type: 'button', onclick: () => showForm({ url: urlInput.value.trim() }) }, 'Skip and fill in by hand'));
@@ -296,7 +297,7 @@ async function newProduct() {
       iconBox,
       productForm(draft, async (body) => {
         const p = await post('/products', body);
-        if (icon && document.getElementById('use-icon')?.checked) await post(`/products/${p.id}/logo/from-url`, { url: icon }).catch(() => toast('Logo could not be fetched; upload one on the next page.'));
+        if (icon && document.getElementById('use-icon')?.checked) await post(`/products/${p.id}/logo/from-url`, { urls: iconCandidates }).catch(() => toast('Logo could not be fetched; upload one on the next page.'));
         go(`/app/products/${p.id}`);
       }, 'Save product'),
     );
@@ -311,6 +312,7 @@ async function newProduct() {
     try {
       const facts = await post('/products/extract', { url });
       icon = facts.icon_url;
+      iconCandidates = facts.icon_candidates || (icon ? [icon] : []);
       showForm({ url, name: facts.name, tagline: facts.tagline, description: facts.description, facts: { x: facts.x, github: facts.github } });
     } catch (err) {
       msg.replaceChildren(h('div', { class: 'notice warn' }, `Could not read that page (${err.message}). Fill in the details by hand.`));
