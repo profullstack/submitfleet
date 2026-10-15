@@ -7,18 +7,21 @@ sites and directories. It keeps one approved product profile, plans a bounded ca
 owner to approve exactly what will be sent, runs durable workers, and records receipts and verified
 listings. The same core serves a CLI, a TUI, an HTTP API, an MCP server and a mobile dashboard.
 
-## Status: early engine, below the release gate
+## Status
 
-| | |
-| --- | --- |
-| Release-qualifying destinations | **0 of 100 required** (`submitfleet coverage report`) |
-| Adapters shipped | 1 (TinyLaunch, contract-tested against its published agent guide; no live submission yet) |
-| Deployed | No. Nothing runs at submitfleet.com yet. |
-| Submissions made | None |
+Live at https://submitfleet.com.
 
-This build is the foundation the 100-destination release is measured against, not that release.
-It does not claim traffic, ranking or customer outcomes. The PRD's value pilot, design-partner
-evidence and the adapter build-out to 100+ are still ahead.
+- **Accounts:** sign up with a passkey, email + password, or an emailed link. Each account gets its own
+  workspace. `submitfleet login` signs the CLI in through the browser (OAuth 2.1 + PKCE).
+- **Catalog:** 339 launch sites and directories (the CC0 awesome-submitlist catalog), 203 free to list,
+  with price, eligibility, audience, link type and traffic for each.
+- **Assisted submissions:** for every destination SubmitFleet prepares each form field from your approved
+  product facts, links the submit page and tracks submitted, live (with the listing URL), rejected or skipped.
+  Destinations are ranked by fit, and niche or platform-only directories that do not match your product are
+  left unchecked.
+- **Automatic submissions:** only where a destination's API permits it and an adapter has been proven
+  against it. Today that is **0 of 339** (`submitfleet coverage report`); the TinyLaunch adapter is
+  contract-tested but has not made a live submission yet.
 
 ## What the engine enforces
 
@@ -106,12 +109,9 @@ record carries contract-test and live-submission evidence through a reviewed reg
 ## Known gaps against the PRD
 
 - 99+ more qualifying adapters, and the first live TinyLaunch submission.
-- Fact extraction from a product URL (products are entered, then owner-approved).
-- Dashboard sign-in is an API key; the house magic-link and passkey sign-in is not wired yet.
-- The dashboard is server-rendered HTML rather than Next.js.
+- The dashboard is plain HTML + JS served by the app rather than Next.js.
 - Browser-adapter runtime (isolated profiles, selectors, receipts) is not built.
 - Analytics integration: outcomes can be recorded but no provider is connected.
-- Hosting, DNS and TLS for submitfleet.com are not configured.
 
 ## License
 

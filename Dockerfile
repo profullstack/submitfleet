@@ -21,6 +21,7 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 SUBMITFLEET_HOME=/data
 # --chown: the deploy account's umask 007 leaves the checkout unreadable to other users.
 COPY --chown=node:node package.json ./
 COPY --chown=node:node catalog ./catalog
+COPY --chown=node:node web ./web
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 RUN mkdir -p /data && chown node:node /data

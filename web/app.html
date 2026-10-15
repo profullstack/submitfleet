@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SubmitFleet</title>
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+<link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="app">
+<aside class="side">
+  <a class="brand" href="/app"><img src="/assets/icon.svg" alt=""> SubmitFleet</a>
+  <nav id="nav">
+    <a href="/app" data-nav="home">Overview</a>
+    <a href="/app/products" data-nav="products">Products</a>
+    <a href="/app/campaigns" data-nav="campaigns">Campaigns</a>
+    <a href="/app/destinations" data-nav="destinations">Destinations</a>
+    <a href="/app/settings" data-nav="settings">Settings</a>
+  </nav>
+  <div class="side-foot">
+    <div class="who" id="who"></div>
+    <button class="btn ghost sm" id="pause-all" type="button" title="Stop every automated submission now">Pause all</button>
+  </div>
+</aside>
+<main class="main">
+  <div id="view" class="view"></div>
+</main>
+<nav class="tabbar" id="tabbar">
+  <a href="/app" data-nav="home">Overview</a>
+  <a href="/app/products" data-nav="products">Products</a>
+  <a href="/app/campaigns" data-nav="campaigns">Campaigns</a>
+  <a href="/app/settings" data-nav="settings">Settings</a>
+</nav>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="/assets/app.js" type="module"></script>
+</body>
+</html>

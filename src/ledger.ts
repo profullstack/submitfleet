@@ -13,6 +13,8 @@ export interface Intent {
   dedupe_key: string;
   state: IntentState;
   reason_code: string | null;
+  mode: 'auto' | 'assisted';
+  note: string | null;
   payload: Record<string, unknown>;
   payload_hash: string;
   lease_owner: string | null;

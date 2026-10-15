@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SubmitFleet docs</title>
+<meta name="description" content="SubmitFleet CLI, MCP server and HTTP API.">
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<header class="site-nav">
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/assets/icon.svg" alt=""> SubmitFleet</a>
+    <nav><a class="link" href="/login">Sign in</a><a class="btn primary" href="/signup">Get started</a></nav>
+  </div>
+</header>
+<main class="wrap docs">
+  <section class="block">
+    <h1>Docs</h1>
+    <p class="sub">SubmitFleet has four ways in: the web app, a CLI, an MCP server for agents, and an HTTP API. They all share the same account, products and campaigns.</p>
+
+    <h2>How a submission works</h2>
+    <p>Every destination is submitted one of two ways:</p>
+    <ul>
+      <li><b>Assisted.</b> SubmitFleet prepares every field from your approved product details, links you to the submit page and tracks the result. You paste and press submit, then mark it submitted and, once it appears, live with its URL. This works for every destination in the catalog.</li>
+      <li><b>Automatic.</b> Where a destination has an API that permits it and we have tested an adapter against it, workers submit for you after you approve the campaign, and record the receipt. Only destinations that pass every check are automatic; the destinations page shows how many that is today.</li>
+    </ul>
+    <p>Either way, nothing is submitted until you approve the exact list, listing fees are always $0 (paid routes are excluded), and a product is never submitted twice to the same place.</p>
+
+    <h2>CLI</h2>
+    <pre><code>curl -fsSL https://submitfleet.com/install.sh | sh
+submitfleet login                    # opens your browser, signs the CLI in (OAuth 2.1 + PKCE)
+submitfleet whoami
+submitfleet products list
+submitfleet catalog search ai --json
+submitfleet campaign status CAMPAIGN_ID --json
+submitfleet report export CAMPAIGN_ID --format markdown
+submitfleet mcp --stdio              # MCP over stdio, signed in as you</code></pre>
+    <p>Without <code>login</code>, the CLI runs fully local against its own database (self-hosted mode). <code>submitfleet help</code> lists every command.</p>
+
+    <h2>MCP</h2>
+    <p>Create an <b>agent</b> key in Settings, then add the server to your client:</p>
+    <pre><code>claude mcp add --transport http submitfleet https://submitfleet.com/mcp \
+  --header "Authorization: Bearer sf_agt_..."</code></pre>
+    <p>Tools are prefixed <code>submitfleet_</code>: products, catalog search, campaign plan, preview, status, reports, the human-action queue and more. An agent can plan a campaign and request approval. There is no tool that grants approval: you approve in the app.</p>
+
+    <h2>HTTP API</h2>
+    <p>Base URL <code>https://submitfleet.com/api/v1</code>, bearer API key in the <code>Authorization</code> header. JSON in and out; errors carry an <code>error</code> code and a <code>message</code>.</p>
+    <pre><code>GET  /products                      POST /products
+POST /products/extract   {url}      PUT  /products/:id/logo  (image body)
+POST /products/:id/approve-facts    (owner)
+GET  /catalog?q=&amp;channel=&amp;pricing=  GET  /catalog-stats
+POST /campaigns  {product_id, destinations?, channels?, mode?}
+POST /campaigns/:id/approval-request
+POST /campaigns/:id/approve  {scope_hash}   (owner)
+POST /campaigns/:id/run      GET  /campaigns/:id/queue
+GET  /submissions/:id/kit    POST /submissions/:id/mark {action, listing_url?, note?}
+GET  /reports/:id?format=markdown|json|csv</code></pre>
+
+    <h2>Self-hosting</h2>
+    <p>SubmitFleet is MIT-licensed. <code>npm i -g @profullstack/submitfleet</code>, then <code>submitfleet serve</code> runs the app, API, MCP and workers in one process on SQLite (or Turso). Source and issues: <a href="https://github.com/profullstack/submitfleet">github.com/profullstack/submitfleet</a>.</p>
+  </section>
+</main>
+<footer class="site"><div class="wrap"><span>© 2026 Profullstack, Inc.</span><span><a href="/">Home</a><a href="https://github.com/profullstack/submitfleet">GitHub</a></span></div></footer>
+</body>
+</html>

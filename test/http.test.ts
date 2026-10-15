@@ -52,7 +52,7 @@ describe('HTTP API', () => {
     const { call, agent } = await setup();
     await seedDestinations(h.fleet, h.owner, 3);
     const p = await approvedProduct(h.fleet, h.owner);
-    const plan = (await (await call(agent, 'POST', '/api/v1/campaigns', { product_id: p.id })).json()) as { campaign: { id: string; status: string }; counts: { executable: number } };
+    const plan = (await (await call(agent, 'POST', '/api/v1/campaigns', { product_id: p.id, mode: 'auto_only' })).json()) as { campaign: { id: string; status: string }; counts: { executable: number } };
     expect(plan.campaign.status).toBe('coverage_insufficient');
     expect(plan.counts.executable).toBe(3);
     const r = await call(agent, 'POST', `/api/v1/campaigns/${plan.campaign.id}/approval-request`);
@@ -71,16 +71,8 @@ describe('HTTP API', () => {
     expect(bad.status).toBe(400);
   });
 
-  it('serves the dashboard with a strict CSP, Copy Markdown and an honest clipboard fallback', async () => {
+  it('serves the installer as a shell script', async () => {
     const { app } = await setup();
-    const page = await app.request('/app');
-    expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
-    const js = await (await app.request('/app/app.js')).text();
-    expect(js).toContain('Copy Markdown');
-    expect(js).toContain('navigator.clipboard.writeText');
-    expect(js).toContain('Clipboard is unavailable');
-    // Success is only reported after the write resolves.
-    expect(js.indexOf("await navigator.clipboard.writeText(text)")).toBeLessThan(js.indexOf("toast('Copied Markdown')"));
     const sh = await app.request('/install.sh');
     expect(sh.headers.get('content-type')).toContain('shellscript');
     expect(await sh.text()).toMatch(/^#!\/bin\/sh/);

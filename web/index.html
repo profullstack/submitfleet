@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SubmitFleet: launch everywhere from one product profile</title>
+<meta name="description" content="SubmitFleet turns one product profile into ready-to-submit listings for {{TOTAL}} launch sites and directories, then tracks every submission until it is live.">
+<meta property="og:title" content="SubmitFleet">
+<meta property="og:description" content="One product profile. Coordinated submissions. Proof of what went live.">
+<meta property="og:type" content="website">
+<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+<header class="site-nav">
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/assets/icon.svg" alt=""> SubmitFleet</a>
+    <nav>
+      <a class="link hide-sm" href="#how">How it works</a>
+      <a class="link hide-sm" href="/docs">Docs</a>
+      <a class="link" href="/login">Sign in</a>
+      <a class="btn primary" href="/signup">Get started</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap">
+    <span class="eyebrow">{{TOTAL}} launch sites and directories, mapped</span>
+    <h1>Launch everywhere from one product profile.</h1>
+    <p class="lead">Describe your product once. SubmitFleet matches it to the launch sites and directories worth your time, prepares every form field for each one, and tracks every submission until the listing is live.</p>
+    <div class="cta">
+      <a class="btn primary lg" href="/signup">Create your account</a>
+      <a class="btn lg" href="#how">See how it works</a>
+    </div>
+    <div class="stats" aria-label="Catalog">
+      <div><b>{{TOTAL}}</b><span>destinations in the catalog</span></div>
+      <div><b>{{FREE}}</b><span>free to list</span></div>
+      <div><b>{{DIRECTORIES}}</b><span>directories</span></div>
+      <div><b>{{LAUNCH}}</b><span>launch sites</span></div>
+    </div>
+  </section>
+
+  <section class="block wrap" id="how">
+    <h2>From one URL to a tracked launch</h2>
+    <p class="sub">The slow part of a launch is not deciding to do it. It is filling in the same form a hundred times and losing track of where you already are.</p>
+    <div class="steps">
+      <div class="card"><h3>Add your product</h3><p>Paste your URL. SubmitFleet reads your page and drafts the name, tagline, description and logo. You fix anything that is off and approve it once.</p></div>
+      <div class="card"><h3>Pick where to launch</h3><p>Filter the catalog by type, price and audience. Free listings only by default. Anywhere you already submitted is skipped automatically, across every campaign.</p></div>
+      <div class="card"><h3>Work the queue</h3><p>Each destination comes with its submit link and every field ready to copy, cut to the length forms expect. Mark it submitted, then live, and keep the listing URL as proof.</p></div>
+    </div>
+  </section>
+
+  <section class="block wrap">
+    <div class="demo">
+      <div>
+        <h2>A launch queue, not a spreadsheet</h2>
+        <p class="sub">See what is waiting for you, what is under review and what is live, for every product you launch. Reports export as Markdown, JSON or CSV.</p>
+        <p class="muted">Where a destination offers an API that allows it, SubmitFleet submits for you, with an approval step first and a receipt after. Everywhere else it does all the preparation and you press the button: usually a minute or two per site.</p>
+      </div>
+      <div class="mock" aria-hidden="true">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <div class="row"><div><b>Product launch site</b><small>Free listing · prepared</small></div><span class="pill amber">Your turn</span></div>
+        <div class="row"><div><b>SaaS directory</b><small>Submitted yesterday</small></div><span class="pill blue">In review</span></div>
+        <div class="row"><div><b>AI tools directory</b><small>Listing URL saved</small></div><span class="pill green">Live</span></div>
+        <div class="row"><div><b>Startup directory</b><small>Only paid listings now</small></div><span class="pill">Skipped</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block wrap">
+    <h2>Built for people who launch more than once</h2>
+    <p class="sub">Founders with several products, studios and agencies: one workspace, every product, every destination.</p>
+    <div class="features">
+      <div class="card"><h3>One approved profile</h3><p>Every submission uses facts you approved. Nothing is invented, and changing a fact asks for approval again.</p></div>
+      <div class="card"><h3>No double submissions</h3><p>Duplicates are blocked per product and destination, even across campaigns, aliases and reworded pitches.</p></div>
+      <div class="card"><h3>Proof of what went live</h3><p>Submitted, in review and live are separate states. Live means a listing URL, not a hopeful guess.</p></div>
+      <div class="card"><h3>Honest catalog</h3><p>Each destination shows its price, audience, eligibility, link type and traffic, so you choose for fit, not for a number.</p></div>
+      <div class="card"><h3>Agents welcome</h3><p>A CLI, an HTTP API and an MCP server. An agent can plan a campaign and ask you to approve it. It cannot approve it for you.</p></div>
+      <div class="card"><h3>Open source</h3><p>Run it yourself with one command, or use it here. Your data exports in full at any time.</p></div>
+    </div>
+  </section>
+
+  <section class="block wrap">
+    <h2>What is in the catalog</h2>
+    <p class="sub">Curated from the open awesome-submitlist catalog and kept current. Free directories and launch sites are selected by default; the rest are one click away.</p>
+    <div class="channels">
+      <span class="pill">Directories</span><span class="pill">Product launch sites</span><span class="pill">Business citations</span><span class="pill">Communities</span><span class="pill">Newsletters</span><span class="pill">Subreddits</span><span class="pill">Marketplaces</span>
+    </div>
+  </section>
+
+  <section class="block wrap">
+    <div class="cta-band">
+      <div><h2>Launch your next product properly.</h2><p>Sign up with a passkey, a password or an emailed link.</p></div>
+      <a class="btn primary lg" href="/signup">Get started</a>
+    </div>
+  </section>
+</main>
+
+<footer class="site">
+  <div class="wrap">
+    <span>© 2026 Profullstack, Inc.</span>
+    <span><a href="/docs">Docs</a><a href="https://github.com/profullstack/submitfleet">GitHub</a><a href="/login">Sign in</a></span>
+  </div>
+</footer>
+</body>
+</html>

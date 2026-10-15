@@ -1,7 +1,7 @@
 {
   "name": "@profullstack/submitfleet",
-  "version": "0.1.0",
-  "description": "SubmitFleet: one product profile, coordinated launch and directory submissions, proof of what went live. Self-hostable engine with CLI, TUI, HTTP API, MCP server and a mobile dashboard.",
+  "version": "0.2.0",
+  "description": "SubmitFleet: launch your product on 339 launch sites and directories from one profile. Prepared submissions, accounts with passkeys, a tracked launch queue, CLI, MCP server and API.",
   "type": "module",
   "license": "MIT",
   "homepage": "https://submitfleet.com",
@@ -31,6 +31,7 @@
   "files": [
     "dist",
     "catalog",
+    "web",
     "README.md",
     "LICENSE"
   ],
@@ -50,7 +51,9 @@
     "@hono/node-server": "2.1.5",
     "@libsql/client": "0.18.0",
     "@modelcontextprotocol/sdk": "1.32.1",
+    "@simplewebauthn/server": "^13.3.3",
     "hono": "4.13.13",
+    "undici": "^7.30.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
