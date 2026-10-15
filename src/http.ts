@@ -1,9 +1,10 @@
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import { INSTALL_SH } from './installer.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Mailer } from './mail.js';
-import { mountWeb, resolveActor, sameOrigin } from './web.js';
+import { mountWeb, resolveActor, sameOrigin, WEB_ROOT } from './web.js';
 import { buildMcpServer } from './mcp.js';
 import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
@@ -114,7 +115,9 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
     const ready = checks.find((x) => x.check === 'database')?.ok === true;
     return c.json({ ready, checks }, ready ? 200 : 503);
   });
-  app.get('/install.sh', (c) => c.body(INSTALL_SH, 200, { 'content-type': 'text/x-shellscript; charset=utf-8' }));
+  // The house npm-CLI installer (w3bs.org template): brings its own Node when the machine has none.
+  const installSh = readFileSync(join(WEB_ROOT, 'install.sh'), 'utf8');
+  app.get('/install.sh', (c) => c.body(installSh, 200, { 'content-type': 'text/x-shellscript; charset=utf-8', 'cache-control': 'no-cache' }));
   // Bearer tokens (agents, CLI) or the browser session. A cookie-authenticated write must
   // come from our own pages (CSRF); cross-site browser calls are refused either way.
   const auth = async (c: Context<Env>, next: () => Promise<void>) => {
@@ -251,8 +254,10 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
     return c.json(await fleet.productSetLogo(A(c), c.req.param('id'), bytes, c.req.header('content-type') ?? ''));
   });
   api.post('/products/:id/logo/from-url', async (c) => {
-    const b = await body(c, z.object({ url: z.string().url().max(2000) }));
-    return c.json(await fleet.productLogoFromUrl(A(c), c.req.param('id'), b.url));
+    const b = await body(c, z.object({ url: z.string().url().max(2000).optional(), urls: z.array(z.string().url().max(2000)).max(10).optional() }));
+    const urls = b.urls ?? (b.url ? [b.url] : []);
+    if (!urls.length) throw new SubmitFleetError('invalid_request', 'url or urls is required');
+    return c.json(await fleet.productLogoFromCandidates(A(c), c.req.param('id'), urls));
   });
   api.get('/catalog-stats', async (c) => c.json(await fleet.catalogStats()));
   api.get('/campaigns/:id/queue', async (c) => c.json(await fleet.campaignQueue(A(c), c.req.param('id'))));

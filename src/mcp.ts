@@ -4,7 +4,7 @@ import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
 import type { Actor } from './workspaces.js';
 
-export const MCP_SERVER_VERSION = '0.1.0';
+export const MCP_SERVER_VERSION = '0.3.0';
 
 type Json = unknown;
 

@@ -15,6 +15,15 @@ export interface StoredAuth {
   access_token: string;
   refresh_token: string;
   expires_at: number;
+  /** Set when signed in with an API key: no refresh, no expiry. */
+  api_key?: boolean;
+}
+
+/** An API key from the environment wins over a stored sign-in (agents, CI). */
+function envAuth(): StoredAuth | null {
+  const key = process.env.SUBMITFLEET_API_KEY;
+  if (!key) return null;
+  return { url: (process.env.SUBMITFLEET_URL ?? DEFAULT_URL).replace(/\/+$/, ''), access_token: key, refresh_token: '', expires_at: Number.MAX_SAFE_INTEGER, api_key: true };
 }
 
 export function authFile(): string {
@@ -22,6 +31,8 @@ export function authFile(): string {
 }
 
 export function readAuth(): StoredAuth | null {
+  const env = envAuth();
+  if (env) return env;
   try {
     return JSON.parse(readFileSync(authFile(), 'utf8')) as StoredAuth;
   } catch {
@@ -103,10 +114,21 @@ export async function login(url = DEFAULT_URL, log: (s: string) => void = (s) =>
   });
 }
 
+/** Signs the CLI in with an API key (Settings → API keys). The key is checked before it is stored. */
+export async function loginWithKey(url: string, key: string): Promise<StoredAuth> {
+  const base = url.replace(/\/+$/, '');
+  const res = await fetch(`${base}/api/me`, { headers: { authorization: `Bearer ${key}` } });
+  if (!res.ok) throw new SubmitFleetError('invalid_key', res.status === 401 ? 'that API key is not valid' : `HTTP ${res.status}`);
+  const auth: StoredAuth = { url: base, access_token: key, refresh_token: '', expires_at: Number.MAX_SAFE_INTEGER, api_key: true };
+  writeAuth(auth);
+  return auth;
+}
+
 export async function logout(): Promise<boolean> {
   const a = readAuth();
   if (!a) return false;
-  await fetch(`${a.url}/oauth/revoke`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: a.refresh_token }) }).catch(() => {});
+  // An API key is only forgotten here; revoke it in Settings if it should stop working everywhere.
+  if (!a.api_key) await fetch(`${a.url}/oauth/revoke`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: a.refresh_token }) }).catch(() => {});
   if (existsSync(authFile())) rmSync(authFile());
   return true;
 }
@@ -115,7 +137,7 @@ export async function logout(): Promise<boolean> {
 export async function accessToken(): Promise<StoredAuth> {
   const a = readAuth();
   if (!a) throw new SubmitFleetError('not_logged_in', 'run submitfleet login first');
-  if (a.expires_at - Date.now() > 60_000) return a;
+  if (a.api_key || a.expires_at - Date.now() > 60_000) return a;
   try {
     const next = await tokenRequest(a.url, { grant_type: 'refresh_token', refresh_token: a.refresh_token, client_id: CLIENT_ID });
     writeAuth(next);

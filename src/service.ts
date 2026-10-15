@@ -318,6 +318,19 @@ export class SubmitFleet {
     return this.productSetLogo(a, id, r.body, mime);
   };
 
+  /** Tries icon candidates in order and keeps the first real PNG, JPEG or WebP. */
+  productLogoFromCandidates = async (a: Actor, id: string, urls: string[]) => {
+    const errors: string[] = [];
+    for (const url of urls.slice(0, 10)) {
+      try {
+        return await this.productLogoFromUrl(a, id, url);
+      } catch (e) {
+        errors.push(`${url}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    throw new SubmitFleetError('invalid_request', 'none of the icons is a PNG, JPEG or WebP image; upload a logo instead', errors);
+  };
+
   /** Public logo bytes for a product, so a directory form can take a logo URL. */
   productLogo = async (productId: string): Promise<{ bytes: Buffer; mime: string } | null> => {
     const r = await one<{ logo_path: string | null; logo_mime: string | null }>(this.db, 'SELECT logo_path, logo_mime FROM products WHERE id = ?', productId);
