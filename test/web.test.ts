@@ -241,3 +241,18 @@ describe('assisted flow over HTTP', () => {
     expect(Buffer.from(await pub.arrayBuffer()).equals(png)).toBe(true);
   });
 });
+
+describe('fact extraction', () => {
+  it('splits "Name: tagline" titles, prefers the domain name, and skips slogans as names', async () => {
+    const { parseFacts } = await import('../src/extract.js');
+    const a = parseFacts('<title>typeheard: drop a recording, get the transcript</title>', 'https://typeheard.com/');
+    expect(a).toMatchObject({ name: 'typeheard', tagline: 'drop a recording, get the transcript' });
+    const b = parseFacts('<meta property="og:site_name" content="Know before it drops"><title>Know before it drops</title><meta name="description" content="Follow a genre or a name and get told before it drops. Free.">', 'https://genrewatch.com/');
+    expect(b.name).toBe('genrewatch');
+    expect(b.tagline).toBe('Know before it drops');
+    const c = parseFacts('<title>bl0ggers. | Human-in-the-loop AI publishing</title><link rel="icon" href="/i.svg"><link rel="apple-touch-icon" href="/a.png">', 'https://bl0ggers.com/');
+    expect(c.name).toBe('bl0ggers');
+    expect(c.icon_candidates[0]).toBe('https://bl0ggers.com/a.png');
+    expect(c.icon_candidates.at(-1)).toBe('https://bl0ggers.com/i.svg');
+  });
+});

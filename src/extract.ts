@@ -60,7 +60,7 @@ export async function fetchPublic(raw: string, f: typeof fetch = guardedFetch, a
   let url = new URL(raw);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     await assertPublic(url);
-    const res = await f(url, { redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept, 'user-agent': 'SubmitFleet/0.2 (+https://submitfleet.com)' } });
+    const res = await f(url, { redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept, 'user-agent': 'SubmitFleet/0.3 (+https://submitfleet.com)' } });
     if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
       url = new URL(res.headers.get('location')!, url);
       continue;
