@@ -26,7 +26,7 @@ const TYPES: Record<string, string> = {
 };
 
 export const PAGE_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' http://127.0.0.1:* http://localhost:*";
+  "default-src 'self'; script-src 'self' https://crawlproof.com; style-src 'self'; img-src 'self' data: https:; connect-src 'self' https://crawlproof.com; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self' http://127.0.0.1:* http://localhost:*";
 
 export interface WebOptions {
   mailer: Mailer;
