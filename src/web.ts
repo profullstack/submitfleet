@@ -13,6 +13,7 @@ import * as oauth from './oauth.js';
 import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
 import { authenticate, type Actor } from './workspaces.js';
+import { withPitFooter } from './pit-footer.js';
 
 export const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'web');
 
@@ -27,7 +28,7 @@ const TYPES: Record<string, string> = {
 };
 
 export const PAGE_CSP =
-  "default-src 'self'; script-src 'self' https://crawlproof.com; style-src 'self'; img-src 'self' data: https:; connect-src 'self' https://crawlproof.com; font-src 'self'; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self' http://127.0.0.1:* http://localhost:*";
+  "default-src 'self'; script-src 'self' https://crawlproof.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://crawlproof.com; font-src 'self'; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self' http://127.0.0.1:* http://localhost:*";
 
 export interface WebOptions {
   mailer: Mailer;
@@ -86,8 +87,9 @@ export const SITE_URL = 'https://submitfleet.com/';
 /**
  * The shared Profullstack footer (links, copyright, << Profullstack >> webring),
  * rendered on the server from the @latest template so the ring verifier, which
- * reads HTML and runs no script, sees the ring links. The page CSP forbids
- * inline styles, so its CSS is served from /assets/pfs-footer.css instead.
+ * reads HTML and runs no script, sees the ring links. Its CSS is served from
+ * /assets/pfs-footer.css (css: false here), so the footer does not depend on
+ * style-src allowing inline styles.
  */
 export function siteFooter(links: { label: string; href: string }[]): Promise<string> {
   return footerHtml({ site: SITE_URL, links, css: false });
@@ -106,10 +108,10 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     const o = origin(c);
     return { origin: o, rpID: new URL(o).hostname, rpName: 'SubmitFleet' };
   };
-  const html = (c: Context, body: string, status = 200) => {
+  const html = async (c: Context, body: string, status = 200) => {
     c.header('content-security-policy', PAGE_CSP);
     c.header('cache-control', 'no-store');
-    return c.html(body, status as 200);
+    return c.html(await withPitFooter(body), status as 200);
   };
   const startSession = async (c: Context, userId: string) => {
     const s = await auth.createSession(fleet.db, userId, c.req.header('user-agent') ?? null);

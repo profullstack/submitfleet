@@ -81,7 +81,6 @@ describe('webring footer', () => {
       const html = await (await req('GET', p)).text();
       expect(html, p).toContain('https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fsubmitfleet.com%2F');
       expect(html, p).toContain('/assets/pfs-footer.css');
-      expect(html, p).not.toContain('<style');
       expect(html.match(/&copy;|©/g)?.length, p).toBe(1);
       // No ad pressed against the footer.
       expect(html.indexOf('cp-ad'), p).toBeLessThan(html.indexOf('<main'));

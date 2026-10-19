@@ -163,7 +163,7 @@ section.block .sub { color: var(--fg-2); max-width: 60ch; font-size: 17px; margi
 .cta-band h2 { margin: 0; color: var(--bg); }
 .cta-band p { margin: 6px 0 0; color: color-mix(in srgb, var(--bg) 75%, transparent); }
 .cta-band .btn.primary { background: var(--bg); color: var(--fg); border-color: var(--bg); }
-.cp-ad { margin-top: 8px; margin-bottom: 24px; }
+.cp-ad { margin-top: 12px; margin-bottom: 12px; }
 .cp-ad iframe { display: block; width: 100%; height: 40px; border: 0; }
 footer.site { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 13.5px; }
 footer.site .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
