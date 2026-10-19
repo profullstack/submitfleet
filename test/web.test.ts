@@ -48,6 +48,7 @@ describe('pages', () => {
     const res = await req('GET', '/');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+    expect(res.headers.get('content-security-policy')).toContain('frame-src https://crawlproof.com');
     // no-referrer makes browsers send Origin: null on same-site form posts, which breaks the consent form.
     expect(res.headers.get('referrer-policy')).toBe('same-origin');
     const html = await res.text();
