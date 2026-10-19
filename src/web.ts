@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { Context, Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
+import { descriptorResponse, footerHtml, latestTemplate } from '@profullstack/footer';
 import * as auth from './auth.js';
 import { escapeHtml } from './adapters/tinylaunch.js';
 import { loginMail, signupMail, type Mailer } from './mail.js';
@@ -80,6 +81,18 @@ function loadStatic(): Map<string, { body: Buffer; type: string }> {
   return files;
 }
 
+export const SITE_URL = 'https://submitfleet.com/';
+
+/**
+ * The shared Profullstack footer (links, copyright, << Profullstack >> webring),
+ * rendered on the server from the @latest template so the ring verifier, which
+ * reads HTML and runs no script, sees the ring links. The page CSP forbids
+ * inline styles, so its CSS is served from /assets/pfs-footer.css instead.
+ */
+export function siteFooter(links: { label: string; href: string }[]): Promise<string> {
+  return footerHtml({ site: SITE_URL, links, css: false });
+}
+
 function safeNext(raw: string | undefined): string {
   // Only same-site paths: never "//evil", never a scheme.
   return raw && /^\/(?!\/)[\w\-./?=&%#]*$/.test(raw) ? raw : '/app';
@@ -138,6 +151,7 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
   app.get('/', async (c) => {
     const stats = await fleet.catalogStats();
     const body = page('index.html')
+      .replace('{{FOOTER}}', await siteFooter([{ label: 'Docs', href: '/docs' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }, { label: 'Sign in', href: '/login' }]))
       .replaceAll('{{TOTAL}}', String(stats.total))
       .replaceAll('{{FREE}}', String(stats.free))
       .replaceAll('{{DIRECTORIES}}', String((stats.by_channel.directory ?? 0) + (stats.by_channel.citation ?? 0)))
@@ -147,7 +161,10 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
   });
   for (const p of ['/signup', '/login']) app.get(p, (c) => html(c, page('auth.html')));
   app.get('/auth/link', (c) => html(c, page('link.html')));
-  app.get('/docs', (c) => html(c, page('docs.html')));
+  app.get('/docs', async (c) =>
+    html(c, page('docs.html').replace('{{FOOTER}}', await siteFooter([{ label: 'Home', href: '/' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }]))),
+  );
+  app.get('/.well-known/openwebring.json', () => descriptorResponse({ site: SITE_URL, name: 'SubmitFleet' }));
   const appShell = async (c: Context) => {
     const user = await auth.sessionUser(fleet.db, getCookie(c, auth.SESSION_COOKIE));
     if (!user) return c.redirect(`/login?next=${encodeURIComponent(new URL(c.req.url).pathname)}`);
@@ -155,6 +172,13 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
   };
   app.get('/app', appShell);
   app.get('/app/*', appShell);
+  // The footer template's CSS (@latest, same cache as the markup); before /assets/*.
+  app.get('/assets/pfs-footer.css', async (c) =>
+    c.body((await latestTemplate()).css.replace(/@import[^;]*;?/gi, '').replace(/<\/?style/gi, ''), 200, {
+      'content-type': 'text/css; charset=utf-8',
+      'cache-control': 'public, max-age=300',
+    }),
+  );
   app.get('/assets/*', (c) => {
     const f = files.get(c.req.path.replace(/^\//, ''));
     if (!f) return c.notFound();
