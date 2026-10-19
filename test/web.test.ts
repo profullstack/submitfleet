@@ -5,6 +5,9 @@ import { buildApp } from '../src/http.js';
 import type { Mail } from '../src/mail.js';
 import { harness, type Harness } from './helpers.js';
 
+// Render the footer from the bundled template: no CDN fetch in tests.
+process.env.PROFULLSTACK_FOOTER_OFFLINE ??= '1';
+
 let h: Harness;
 let mails: Mail[];
 let app: ReturnType<typeof buildApp>;
@@ -69,6 +72,25 @@ describe('pages', () => {
     }
     expect((await req('GET', '/assets/app.js')).status).toBe(200);
     expect((await req('GET', '/assets/../package.json')).status).toBe(404);
+  });
+});
+
+describe('webring footer', () => {
+  it('server-renders the Profullstack ring footer on the landing and docs pages, with its CSS from a route', async () => {
+    for (const p of ['/', '/docs']) {
+      const html = await (await req('GET', p)).text();
+      expect(html, p).toContain('https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fsubmitfleet.com%2F');
+      expect(html, p).toContain('/assets/pfs-footer.css');
+      expect(html.match(/&copy;|©/g)?.length, p).toBe(1);
+      // No ad pressed against the footer.
+      expect(html.indexOf('cp-ad'), p).toBeLessThan(html.indexOf('<main'));
+    }
+    const css = await req('GET', '/assets/pfs-footer.css');
+    expect(css.status).toBe(200);
+    expect(css.headers.get('content-type')).toContain('text/css');
+    expect(await css.text()).toContain('.pfs-footer');
+    const ring = await (await req('GET', '/.well-known/openwebring.json')).json();
+    expect(ring.rings[0].ring).toContain('/ring/profullstack');
   });
 });
 
