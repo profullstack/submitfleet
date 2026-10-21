@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import type { Mailer } from './mail.js';
 import { mountWeb, resolveActor, sameOrigin, WEB_ROOT } from './web.js';
 import { buildMcpServer } from './mcp.js';
+import { createCrawlGate, type CrawlGate } from './crawl-gate.js';
+import { x402Gateway } from '@profullstack/x402-gateway/hono';
 import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
 import type { Actor } from './workspaces.js';
@@ -89,7 +91,7 @@ function bearer(c: Context): string | null {
   return h.startsWith('Bearer ') ? h.slice(7).trim() : null;
 }
 
-export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; mailer?: Mailer; publicOrigin?: string } = {}): Hono<Env> {
+export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; mailer?: Mailer; publicOrigin?: string; crawlGate?: CrawlGate | null } = {}): Hono<Env> {
   const app = new Hono<Env>();
   const allowed = new Set(opts.allowedOrigins ?? []);
 
@@ -108,6 +110,10 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
     c.header('referrer-policy', 'same-origin');
     c.header('x-frame-options', 'DENY');
   });
+
+  // Training crawlers buy a day pass before anything else is done for them.
+  const crawlGate = opts.crawlGate !== undefined ? opts.crawlGate : createCrawlGate();
+  if (crawlGate) app.use('*', x402Gateway(crawlGate));
 
   app.get('/healthz', (c) => c.json({ ok: true }));
   app.get('/readyz', async (c) => {
