@@ -20,6 +20,9 @@ importers:
       '@profullstack/footer':
         specifier: ^0.2.4
         version: 0.2.4
+      '@profullstack/x402-gateway':
+        specifier: ^0.11.0
+        version: 0.11.0
       '@simplewebauthn/server':
         specifier: ^13.3.3
         version: 13.3.3
@@ -359,6 +362,14 @@ packages:
     peerDependenciesMeta:
       react:
         optional: true
+
+  '@profullstack/keys@0.1.0':
+    resolution: {integrity: sha512-Vys47LvS5ivhdZu4SYOxh9Le3DEmWhjP0+CtrU45RhXAbY0ZFG/2Dk9V1bIIUGDp8UWMJqctvUD21JrNjfh04w==}
+    engines: {node: '>=20.11'}
+
+  '@profullstack/x402-gateway@0.11.0':
+    resolution: {integrity: sha512-Lfrz+SRTwQZfcoCaVtaaMNPJx74Lp/5oyS7vJJAEuJmH1TjBzhE7dWquISkj1p42oc+VW5I9xH9p7YhEKqmr4Q==}
+    engines: {node: '>=20.11'}
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     resolution: {integrity: sha512-Vu/NICrgdRvUOeaJZIyB2FP63s6fO/4ud5l8dXmxDx9yDyn+mN0y+gsvsVviSli+T361Aqo0h46EuMoobrwawA==}
@@ -1567,6 +1578,12 @@ snapshots:
       tsyringe: 4.10.0
 
   '@profullstack/footer@0.2.4': {}
+
+  '@profullstack/keys@0.1.0': {}
+
+  '@profullstack/x402-gateway@0.11.0':
+    dependencies:
+      '@profullstack/keys': 0.1.0
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
     optional: true
