@@ -17,6 +17,8 @@ import * as products from './products.js';
 import * as reports from './reports.js';
 import { loadSecretKey, newId, nowIso, SubmitFleetError } from './util.js';
 import { Worker } from './worker.js';
+import { Rewards, rewardsDbPath } from './rewards.js';
+import { dataDir } from './config.js';
 import * as ws from './workspaces.js';
 import type { Actor } from './workspaces.js';
 
@@ -65,7 +67,20 @@ export class SubmitFleet {
     return new SubmitFleet(db, config);
   }
 
+  private rewardsInstance: Rewards | null = null;
+
+  /** Credit codes, the Pro plan and invites (opened on first use). */
+  get rewards(): Rewards {
+    return (this.rewardsInstance ??= new Rewards(
+      this.db,
+      rewardsDbPath(this.config.dbUrl, join(dataDir(), 'rewards.db')),
+      this.config.secretKey ?? 'submitfleet-local',
+      this.now,
+    ));
+  }
+
   close(): void {
+    this.rewardsInstance?.close();
     this.db.close();
   }
 

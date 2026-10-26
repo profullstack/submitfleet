@@ -22,7 +22,7 @@ export function createCrawlGate(env: Record<string, string | undefined> = proces
     coinpay: { apiKey },
     payTo,
     contact: 'mailto:anthony@profullstack.com',
-    openPaths: ['/healthz', '/readyz', '/install.sh', '/llms.txt', '/api/', '/mcp', '/oauth/'],
+    openPaths: ['/healthz', '/readyz', '/install.sh', '/llms.txt', '/api/', '/mcp', '/oauth/', '/i/', '/invites'],
     exempt: (request: Request) => session.test(request.headers.get('cookie') ?? ''),
   });
 }

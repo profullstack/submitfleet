@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Mailer } from './mail.js';
-import { mountWeb, resolveActor, sameOrigin, WEB_ROOT } from './web.js';
+import { clientIp, mountWeb, resolveActor, sameOrigin, WEB_ROOT } from './web.js';
+import { allow } from './auth.js';
 import { buildMcpServer } from './mcp.js';
 import { createCrawlGate, type CrawlGate } from './crawl-gate.js';
 import { x402Gateway } from '@profullstack/x402-gateway/hono';
@@ -46,6 +47,8 @@ const STATUS: Record<string, number> = {
   url_unresolvable: 400,
   fetch_failed: 502,
   mail_unavailable: 503,
+  person_required: 403,
+  invites_exhausted: 409,
 };
 
 const productBody = z.object({
@@ -167,6 +170,39 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
       const user = id.startsWith('user:') ? await getUser(fleet.db, id.slice(5)) : null;
       return user ? { id: user.id, email: user.email } : null;
     },
+  });
+
+  // ── Plan, credit codes and invites (a signed-in person, not a workspace key) ──
+  const person = async (c: Context<Env>) => {
+    const id = A(c).id;
+    const user = id.startsWith('user:') ? await getUser(fleet.db, id.slice(5)) : null;
+    if (!user) throw new SubmitFleetError('person_required', 'sign in as a person (browser or submitfleet login); workspace API keys have no plan');
+    return user;
+  };
+  const throttle = (c: Context<Env>, key: string, n: number, minutes: number) => {
+    if (!allow(`${key}:${A(c).id}`, n, minutes * 60_000) || !allow(`${key}:ip:${clientIp(c)}`, n * 3, minutes * 60_000)) {
+      throw new SubmitFleetError('rate_limited', 'too many attempts; wait a few minutes');
+    }
+  };
+  api.get('/plan', async (c) => c.json(await fleet.rewards.plan((await person(c)).id)));
+  api.post('/credits/redeem', async (c) => {
+    const u = await person(c);
+    throttle(c, 'redeem', 10, 10);
+    const b = await body(c, z.object({ code: z.string().min(1).max(64) }));
+    return c.json(await fleet.rewards.redeem(u.id, b.code));
+  });
+  api.get('/invites', async (c) => c.json(await fleet.rewards.invites((await person(c)).id)));
+  api.post('/invites', async (c) => {
+    const u = await person(c);
+    throttle(c, 'invite-create', 10, 60);
+    const b = await body(c, z.object({ note: z.string().max(80).optional() }));
+    return c.json(await fleet.rewards.createInvite(u, b.note, clientIp(c)), 201);
+  });
+  api.post('/invites/accept', async (c) => {
+    const u = await person(c);
+    throttle(c, 'invite-accept', 10, 10);
+    const b = await body(c, z.object({ code: z.string().min(1).max(64) }));
+    return c.json(await fleet.rewards.acceptInvite(u.id, b.code, clientIp(c)));
   });
 
   api.get('/whoami', (c) => c.json({ workspace_id: A(c).workspaceId, role: A(c).role, key_id: A(c).id }));

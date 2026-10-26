@@ -98,6 +98,21 @@ command. Exit codes: 0 ok, 1 error, 2 usage, 3 gate not met, 4 jobs waiting for 
 - **Dashboard** at `/app`: coverage, portfolio, campaigns (preview, approve, run, pause, cancel),
   human-action queue, accounts, reports with Copy Markdown and downloads.
 
+## Credit codes and invites
+
+- **Credit codes** (`@profullstack/redeem-credits`) grant Pro days. Redeem under Settings > Plan
+  ("Have a code?"), `POST /api/v1/credits/redeem`, `submitfleet redeem CODE` or the
+  `submitfleet_redeem_code` MCP tool. Every grant extends `users.pro_until` through one path,
+  idempotent on (user, source). Mint on the server: `submitfleet credits mint --days 30 [--max 1]
+  [--expires-days 30] [--label L]` (also `credits list`, `credits revoke ID`), run against the
+  local database (on the hosted box: `docker exec <app container> node dist/cli.js credits mint ...`).
+- **Invites** (`@profullstack/affiliates`): 3 per account at `/invites`, landing at `/i/<code>`.
+  The code is remembered on the device and on the emailed sign-in link. A new account (7 days or
+  younger) accepts one invite; both people get `SUBMITFLEET_INVITE_BONUS_DAYS` (default 14) Pro
+  days, refused for the same mailbox (+tags, Gmail dots), throwaway inboxes, the same network,
+  `?ref=` sign-ups and past `SUBMITFLEET_INVITE_MONTHLY_CAP` (default 5) bonuses per inviter per 30 days.
+- `?ref=<code>` on any page is first-touch affiliate attribution (cookie `referral_code`).
+
 ## Adapters
 
 Every adapter implements `capabilities`, `validate`, `prepare` (no remote writes), `preflight`,

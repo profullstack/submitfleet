@@ -172,17 +172,25 @@ export async function recentEmailCount(db: Db, email: string, minutes = 15, now 
  * an address they cannot read); a sign-in link for an unknown address also creates it,
  * which makes the emailed link the way in from nothing.
  */
-export async function consumeEmailToken(db: Db, token: string, now = Date.now()): Promise<{ user: User; created: boolean; purpose: LinkPurpose }> {
+export interface LinkMeta {
+  /** Invite code carried on the emailed link, so another browser or phone still counts it. */
+  invite_code?: string | null;
+  /** First-touch ?ref= affiliate code, carried the same way. */
+  ref_code?: string | null;
+}
+
+export async function consumeEmailToken(db: Db, token: string, now = Date.now()): Promise<{ user: User; created: boolean; purpose: LinkPurpose; meta: LinkMeta }> {
   const h = sha256(token);
   const ts = new Date(now).toISOString();
   const n = await run(db, 'UPDATE email_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?', ts, h, ts);
   if (n !== 1) throw new SubmitFleetError('link_invalid', 'this link has expired or was already used; request a new one');
   const row = (await one<{ email: string; purpose: LinkPurpose; data_json: string }>(db, 'SELECT email, purpose, data_json FROM email_tokens WHERE token_hash = ?', h))!;
-  const data = parseJson<{ name?: string; password_hash?: string; profile?: Record<string, string | null> }>(row.data_json, {});
+  const data = parseJson<{ name?: string; password_hash?: string; profile?: Record<string, string | null> } & LinkMeta>(row.data_json, {});
+  const meta: LinkMeta = { invite_code: data.invite_code ?? null, ref_code: data.ref_code ?? null };
   const existing = await getUserByEmail(db, row.email);
   if (existing) {
     await run(db, 'UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?), failed_logins = 0, locked_until = NULL WHERE id = ?', ts, existing.id);
-    return { user: existing, created: false, purpose: row.purpose };
+    return { user: existing, created: false, purpose: row.purpose, meta };
   }
   const user = await createUser(db, row.email, { name: data.name ?? null, passwordHash: data.password_hash ?? null });
   if (data.profile) {
@@ -191,7 +199,7 @@ export async function consumeEmailToken(db: Db, token: string, now = Date.now())
       console.error('[submitfleet] signup profile save failed:', e instanceof Error ? e.message : e),
     );
   }
-  return { user, created: true, purpose: row.purpose };
+  return { user, created: true, purpose: row.purpose, meta };
 }
 
 // ── Passkeys ──

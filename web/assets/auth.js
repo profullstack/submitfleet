@@ -4,7 +4,8 @@ const $ = (s) => document.querySelector(s);
 const params = new URLSearchParams(location.search);
 const next = (() => {
   const n = params.get('next');
-  return n && /^\/(?!\/)/.test(n) ? n : '/app';
+  // Same-site paths only: never //host or /\host (browsers read a backslash as a slash).
+  return n && /^\/(?![\/\\])[^\s\\]*$/.test(n) ? n : '/app';
 })();
 
 function say(text, kind = 'info') {

@@ -16,6 +16,15 @@ import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
 import { authenticate, type Actor } from './workspaces.js';
 import { withPitFooter } from './pit-footer.js';
+import { REF_COOKIE, refFromRequest } from '@profullstack/affiliates';
+import { INVITE_COOKIE, inviteBonusDays } from './rewards.js';
+
+const COOKIE_CODE = /^[A-Za-z0-9-]{6,48}$/;
+/** An invite or affiliate code from a cookie or URL, or null when it is not code-shaped. */
+export function cleanCode(v: string | null | undefined): string | null {
+  const t = (v ?? '').trim();
+  return COOKIE_CODE.test(t) ? t : null;
+}
 
 export const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'web');
 
@@ -152,7 +161,9 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     const existing = await auth.getUserByEmail(fleet.db, email);
     // An existing account always gets a plain sign-in link, so sign-up never reveals or overwrites anything.
     const p: auth.LinkPurpose = existing ? 'login' : purpose;
-    const token = await auth.createEmailToken(fleet.db, email, p, existing ? {} : data);
+    // The invite and ?ref= codes ride on the link, so finishing in another browser still counts them.
+    const meta: auth.LinkMeta = { invite_code: cleanCode(getCookie(c, INVITE_COOKIE)), ref_code: cleanCode(getCookie(c, REF_COOKIE)) };
+    const token = await auth.createEmailToken(fleet.db, email, p, existing ? { ...meta } : { ...data, ...meta });
     const url = `${origin(c)}/auth/link#t=${token}`;
     try {
       await opts.mailer(p === 'signup' ? signupMail(email, url) : loginMail(email, url, !!existing));
@@ -162,6 +173,33 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     }
   };
   const SENT = { ok: true, message: 'If that address can receive mail, a link is on its way. It expires in 20 minutes.' };
+
+  /**
+   * After any sign-in: accept a pending invite (from the emailed link or the /i/<code>
+   * cookie) for a new account, and record first-touch ?ref= attribution for a brand-new one.
+   * Never blocks the sign-in.
+   */
+  const afterSignIn = async (c: Context, userId: string, created: boolean, meta: auth.LinkMeta = {}) => {
+    try {
+      const invite = cleanCode(meta.invite_code) ?? cleanCode(getCookie(c, INVITE_COOKIE));
+      if (invite) {
+        await fleet.rewards.acceptQuietly(userId, invite, clientIp(c));
+        deleteCookie(c, INVITE_COOKIE, { path: '/' });
+      }
+      if (created) await fleet.rewards.attribute(cleanCode(meta.ref_code) ?? cleanCode(refFromRequest(c.req.raw)), userId);
+    } catch (e) {
+      console.error('[submitfleet] after sign-in:', e instanceof Error ? e.message : e);
+    }
+  };
+
+  // First-touch ?ref= on any page: remembered for 30 days, never overwritten.
+  app.use('*', async (c, next) => {
+    const ref = c.req.method === 'GET' ? cleanCode(c.req.query('ref')) : null;
+    if (ref && !getCookie(c, REF_COOKIE)) {
+      setCookie(c, REF_COOKIE, ref, { httpOnly: true, secure: origin(c).startsWith('https:'), sameSite: 'Lax', path: '/', maxAge: 30 * 86_400 });
+    }
+    await next();
+  });
 
   // ── Pages ──
   app.get('/', async (c) => {
@@ -191,6 +229,18 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     if (!user) return c.redirect(`/login?next=${encodeURIComponent(new URL(c.req.url).pathname)}`);
     return html(c, page('app.html'));
   };
+  // Invite landing: remembers the code on this device, then sign-up. Outside every gate.
+  app.get('/i/:code', async (c) => {
+    const code = cleanCode(c.req.param('code'));
+    if (!code) return html(c, page('error.html').replace('{{MESSAGE}}', 'That invite link is not valid.'), 404);
+    setCookie(c, INVITE_COOKIE, code, { httpOnly: true, secure: origin(c).startsWith('https:'), sameSite: 'Lax', path: '/', maxAge: 30 * 86_400 });
+    const stats = await fleet.catalogStats();
+    return html(
+      c,
+      page('invite.html').replaceAll('{{CODE}}', escapeHtml(code)).replaceAll('{{DAYS}}', String(inviteBonusDays())).replaceAll('{{TOTAL}}', String(stats.total)),
+    );
+  });
+  app.get('/invites', (c) => c.redirect('/app/invites'));
   app.get('/app', appShell);
   app.get('/app/*', appShell);
   // The footer template's CSS (@latest, same cache as the markup); before /assets/*.
@@ -263,6 +313,7 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     if (limited(c, 'link', 30, 10)) throw new SubmitFleetError('rate_limited', 'too many attempts; wait a few minutes');
     const r = await auth.consumeEmailToken(fleet.db, b.token);
     await startSession(c, r.user.id);
+    await afterSignIn(c, r.user.id, r.created, r.meta);
     return c.json({ ok: true, created: r.created, user: { email: r.user.email } });
   });
   app.post('/api/auth/login', async (c) => {
@@ -271,6 +322,7 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     if (limited(c, 'login', 20, 10)) throw new SubmitFleetError('rate_limited', 'too many attempts; wait a few minutes or use an emailed link');
     const user = await auth.loginWithPassword(fleet.db, b.email, b.password);
     await startSession(c, user.id);
+    await afterSignIn(c, user.id, false);
     return c.json({ ok: true });
   });
   app.post('/api/auth/logout', async (c) => {
@@ -290,6 +342,7 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     const b = await json(c, z.object({ challenge_id: z.string(), response: z.record(z.string(), z.unknown()) }));
     const user = await auth.passkeyLogin(fleet.db, rp(c), b.challenge_id, b.response as unknown as AuthenticationResponseJSON);
     await startSession(c, user.id);
+    await afterSignIn(c, user.id, false);
     return c.json({ ok: true });
   });
 
