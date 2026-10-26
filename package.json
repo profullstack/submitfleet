@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/submitfleet",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "SubmitFleet: launch your product on 339 launch sites and directories from one profile. Prepared submissions, accounts with passkeys, a tracked launch queue, CLI, MCP server and API.",
   "type": "module",
   "license": "MIT",
@@ -50,19 +50,19 @@
   "dependencies": {
     "@hono/node-server": "2.1.5",
     "@libsql/client": "0.18.0",
-    "@modelcontextprotocol/sdk": "1.32.1",
-    "@profullstack/footer": "^0.2.4",
-    "@profullstack/profile": "0.1.3",
-    "@profullstack/x402-gateway": "^0.11.0",
-    "@simplewebauthn/server": "^13.3.3",
-    "hono": "4.13.13",
-    "undici": "^7.30.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@profullstack/footer": "^0.2.6",
+    "@profullstack/profile": "0.1.6",
+    "@profullstack/x402-gateway": "^0.13.1",
+    "@simplewebauthn/server": "^14.0.3",
+    "hono": "4.13.14",
+    "undici": "^8.12.3",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vitest": "5.0.4"
+    "vitest": "5.0.5"
   }
 }
