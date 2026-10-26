@@ -18,8 +18,8 @@ importers:
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
       '@profullstack/footer':
-        specifier: ^0.2.6
-        version: 0.2.6
+        specifier: ^0.4.0
+        version: 0.4.0
       '@profullstack/profile':
         specifier: 0.1.6
         version: 0.1.6(@libsql/client@0.18.0)
@@ -364,8 +364,8 @@ packages:
     resolution: {integrity: sha512-adpW58ySPQMOUPv8pTKT3RIyCFqfUFt8X05ukPdtkQToXDVr8dMtxuenik1yx8tNFTbpApWsM/Hi5SzlIx48+Q==}
     engines: {node: '>=20.0.0'}
 
-  '@profullstack/footer@0.2.6':
-    resolution: {integrity: sha512-BKwbDszAc7e0mYIBiPjgr/5WS8WyDt8IW718s/zW/8pCWOIB1BGwSNs6fmImRSo5kqIjQKUVbXp22jZQ5GEipA==}
+  '@profullstack/footer@0.4.0':
+    resolution: {integrity: sha512-EJZnMUQmWDi9Gzx6BAjogloeaPFFSSCHtHJuC9dsXiOz8M87hfn6Z+Zx9AMYWk8s6xemPrPlkXKGB3PZugkcEA==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -1620,7 +1620,7 @@ snapshots:
       tslib: 2.8.1
       tsyringe: 4.10.0
 
-  '@profullstack/footer@0.2.6': {}
+  '@profullstack/footer@0.4.0': {}
 
   '@profullstack/keys@0.1.0': {}
 
