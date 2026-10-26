@@ -4,7 +4,6 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
   type AuthenticationResponseJSON,
-  type AuthenticatorTransportFuture,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { createProfileStore, saveSignupProfile } from '@profullstack/profile';
@@ -212,7 +211,7 @@ export async function passkeyRegistrationOptions(db: Db, rp: RelyingParty, user:
     userDisplayName: user.name ?? user.email,
     userID: new TextEncoder().encode(user.id),
     attestationType: 'none',
-    excludeCredentials: existing.map((p) => ({ id: p.id, transports: parseJson<AuthenticatorTransportFuture[]>(p.transports_json, []) })),
+    excludeCredentials: existing.map((p) => ({ id: p.id, transports: parseJson<string[]>(p.transports_json, []) })),
     authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
   });
   const challengeId = await saveChallenge(db, options.challenge, user.id, 'register');
