@@ -2,9 +2,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
+import { allow } from './auth.js';
 import type { Actor } from './workspaces.js';
 
-export const MCP_SERVER_VERSION = '0.3.2';
+export const MCP_SERVER_VERSION = '0.4.0';
 
 type Json = unknown;
 
@@ -50,6 +51,17 @@ export function buildMcpServer(fleet: SubmitFleet, actor: Actor): McpServer {
   const s = new McpServer({ name: 'submitfleet', version: MCP_SERVER_VERSION });
   const write = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
   const read = { readOnlyHint: true, openWorldHint: false };
+
+  // Plan and credit codes act for the signed-in person (CLI login / OAuth token), not a workspace key.
+  const personId = () => {
+    if (!actor.id.startsWith('user:')) throw new SubmitFleetError('person_required', 'sign in as a person (submitfleet login); workspace API keys have no plan');
+    return actor.id.slice(5);
+  };
+  s.registerTool('submitfleet_plan', { description: 'The signed-in person\'s plan: free or pro, and until when.', inputSchema: {}, annotations: read }, wrap(async () => fleet.rewards.plan(personId())));
+  s.registerTool('submitfleet_redeem_code', { description: 'Redeem a credit code someone gave the signed-in person, for Pro days.', inputSchema: { code: z.string().min(1).max(64) }, annotations: write }, wrap(async (a) => {
+    if (!allow(`redeem:${actor.id}`, 10, 600_000)) throw new SubmitFleetError('rate_limited', 'too many attempts; wait a few minutes');
+    return fleet.rewards.redeem(personId(), a.code);
+  }));
 
   s.registerTool('submitfleet_product_create', { description: 'Create a product profile from its canonical URL and facts you can source. Facts must be approved by the owner before any campaign can use them.', inputSchema: { url: z.string().url(), ...productFields }, annotations: write }, wrap((a) => fleet.productCreate(actor, a as never)));
   s.registerTool('submitfleet_product_get', { description: 'Get one product.', inputSchema: { id: z.string() }, annotations: read }, wrap((a) => fleet.productGet(actor, a.id)));

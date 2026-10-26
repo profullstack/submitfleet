@@ -374,4 +374,40 @@ ON CONFLICT (user_id) DO UPDATE SET
   last_name = COALESCE(user_profiles.last_name, excluded.last_name)
 `,
   },
+  {
+    // Plan + credit codes + invites. users.pro_until is the plan; plan_grants makes every
+    // grant idempotent on (user, source). The credit_* / aff_* module tables are created by
+    // @profullstack/redeem-credits and @profullstack/affiliates on first use.
+    version: 4,
+    sql: `
+ALTER TABLE users ADD COLUMN pro_until TEXT;
+
+CREATE TABLE plan_grants (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  source TEXT NOT NULL,
+  days INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, source)
+);
+
+CREATE TABLE invite_origins (
+  invite_id TEXT PRIMARY KEY,
+  ip_hash TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE invite_acceptances (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  inviter_id TEXT NOT NULL REFERENCES users(id),
+  invite_id TEXT NOT NULL UNIQUE,
+  ip_hash TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'granted', 'denied')),
+  reason TEXT NOT NULL DEFAULT '',
+  bonus_days INTEGER NOT NULL DEFAULT 0,
+  accepted_at TEXT NOT NULL,
+  settled_at TEXT
+);
+CREATE INDEX invite_acceptances_inviter ON invite_acceptances (inviter_id, status, settled_at)
+`,
+  },
 ];

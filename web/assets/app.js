@@ -109,6 +109,7 @@ const routes = [
   [/^\/app\/campaigns\/([\w-]+)$/, campaignPage],
   [/^\/app\/destinations\/?$/, destinationsPage],
   [/^\/app\/settings\/?$/, settingsPage],
+  [/^\/app\/invites\/?$/, invitesPage],
 ];
 let me = null;
 async function render() {
@@ -633,6 +634,9 @@ async function settingsPage() {
         }
       } }, 'Save profile'))));
 
+  // Plan + "Have a code?"
+  root.append(h('div', { class: 'section-title', id: 'code' }, 'Plan'), await planCard());
+
   // Passkeys
   const pkList = h('div', { class: 'list' }, me.passkeys.length ? me.passkeys.map((k) => h('div', { class: 'item' }, h('span', {}, '🔑'),
     h('div', {}, h('div', { class: 'title' }, k.name || 'Passkey'), h('div', { class: 'sub' }, h('span', {}, `added ${when(k.created_at)}`), k.last_used_at ? h('span', {}, `· last used ${when(k.last_used_at)}`) : null)),
@@ -701,6 +705,95 @@ async function settingsPage() {
       h('pre', {}, h('code', {}, `claude mcp add --transport http submitfleet ${origin}/mcp --header "Authorization: Bearer <agent key>"`))));
 
   root.append(h('div', { class: 'section-title' }, 'Session'), h('button', { class: 'btn', type: 'button', onclick: signOut }, 'Sign out'));
+  return root;
+}
+
+// ── Plan and credit codes ──
+const longDate = (iso) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+async function planCard() {
+  const plan = await api('/plan');
+  const status = h('div', {});
+  const paint = (p) => status.replaceChildren(p.pro_active
+    ? h('p', {}, h('span', { class: 'pill green' }, 'Pro'), ` until ${longDate(p.pro_until)} (${p.days_left} ${p.days_left === 1 ? 'day' : 'days'} left)`)
+    : h('p', {}, h('span', { class: 'pill' }, 'Free'), p.pro_until ? ` Pro ended ${longDate(p.pro_until)}.` : ''));
+  paint(plan);
+  const input = h('input', { type: 'text', name: 'code', placeholder: 'SF-XXXX-XXXX-XXXX-XXXX', autocomplete: 'off', spellcheck: 'false', maxlength: 64 });
+  const msg = h('div', { role: 'status', 'aria-live': 'polite' });
+  const form = h('form', { class: 'btn-row' }, input, h('button', { class: 'btn primary', type: 'submit' }, 'Redeem'));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!input.value.trim()) return;
+    try {
+      const r = await post('/credits/redeem', { code: input.value.trim() });
+      input.value = '';
+      paint(r);
+      msg.replaceChildren(h('div', { class: 'notice ok' }, `Code redeemed: ${r.days} Pro ${r.days === 1 ? 'day' : 'days'} added.`));
+    } catch (err) {
+      msg.replaceChildren(h('div', { class: 'notice bad' }, err.message));
+    }
+  });
+  return h('div', { class: 'card stack' }, status,
+    h('label', { class: 'small' }, h('b', {}, 'Have a code?'), ' Enter it here. Codes are case-insensitive; dashes and spaces are optional.'),
+    form, msg,
+    h('p', { class: 'muted small' }, 'Invite friends for more: ', link('/app/invites', 'your invites')));
+}
+
+// ── Invites ──
+async function invitesPage() {
+  const d = await api('/invites');
+  const root = h('div', {}, pageHead('Invites', `Invites are scarce: you have ${d.quota.left} of ${d.quota.total} left. Each works once, for a new account, and expires after 30 days.`));
+  if (d.bonus_days) root.append(h('p', { class: 'muted' }, `When someone joins with your invite, you both get ${d.bonus_days} days of SubmitFleet Pro.`));
+  const shown = h('div');
+  const note = h('input', { type: 'text', placeholder: 'Who is it for? (only you see this)', maxlength: 80 });
+  const create = h('button', { class: 'btn primary', type: 'button', disabled: d.quota.left < 1 }, 'Create invite');
+  create.addEventListener('click', async () => {
+    try {
+      const inv = await post('/invites', { note: note.value.trim() || undefined });
+      const url = `${location.origin}/i/${inv.code}`;
+      shown.replaceChildren(h('div', { class: 'notice ok' }, h('b', {}, 'Send this link. It is shown once.'), h('div', { class: 'token' }, url),
+        h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', type: 'button', onclick: () => copy(url, 'Invite link copied') }, 'Copy link'))));
+      note.value = '';
+      const again = await api('/invites');
+      list.replaceChildren(...inviteRows(again.invites));
+      create.disabled = again.quota.left < 1;
+    } catch (e) {
+      toast(e.message);
+    }
+  });
+  const inviteRows = (invites) => invites.length ? invites.map((i) => h('div', { class: 'item' },
+    h('span', { class: `pill ${i.used ? 'green' : i.revoked ? 'red' : ''}` }, i.used ? 'Joined' : i.revoked ? 'Withdrawn' : i.expires_at && Date.parse(i.expires_at) < Date.now() ? 'Expired' : 'Open'),
+    h('div', {}, h('div', { class: 'title' }, i.note || 'Invite'), h('div', { class: 'sub' }, h('span', {}, `created ${when(i.created_at)}`),
+      i.used_at ? h('span', {}, `· joined ${when(i.used_at)}`) : null,
+      i.bonus ? h('span', {}, i.bonus.status === 'granted' ? `· +${i.bonus.days} Pro days` : i.bonus.status === 'denied' ? `· no bonus (${i.bonus.reason})` : '· bonus pending') : null)),
+    h('span'))) : [h('div', { class: 'item' }, h('span'), h('div', { class: 'muted' }, 'No invites yet.'), h('span'))];
+  const list = h('div', { class: 'list' }, inviteRows(d.invites));
+  root.append(shown, h('div', { class: 'btn-row' }, note, create), list);
+
+  // Open affiliate link
+  const ref = `${location.origin}/?ref=${d.affiliate_code}`;
+  root.append(h('div', { class: 'section-title' }, 'Your link'),
+    h('div', { class: 'card stack' }, h('p', { class: 'muted small' }, 'Share it anywhere. Sign-ups through it are credited to you.'), h('div', { class: 'token' }, ref),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', type: 'button', onclick: () => copy(ref, 'Link copied') }, 'Copy link'))));
+
+  // Accept an invite (new accounts)
+  if (!d.accepted) {
+    const code = h('input', { type: 'text', placeholder: 'INV-XXXX-XXXX-XXXX', autocomplete: 'off', spellcheck: 'false', maxlength: 64 });
+    const msg = h('div', { role: 'status', 'aria-live': 'polite' });
+    const form = h('form', { class: 'btn-row' }, code, h('button', { class: 'btn', type: 'submit' }, 'Accept invite'));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const r = await post('/invites/accept', { code: code.value.trim() });
+        msg.replaceChildren(h('div', { class: 'notice ok' }, r.bonus?.status === 'granted' ? `Invite accepted: ${r.bonus.days} Pro days added for you both.` : 'Invite accepted.'));
+        form.remove();
+      } catch (err) {
+        msg.replaceChildren(h('div', { class: 'notice bad' }, err.message));
+      }
+    });
+    root.append(h('div', { class: 'section-title' }, 'Have an invite?'), h('div', { class: 'card stack' }, h('p', { class: 'muted small' }, 'For accounts created in the last 7 days.'), form, msg));
+  } else {
+    root.append(h('div', { class: 'section-title' }, 'Your invite'), h('p', { class: 'muted' }, d.accepted.status === 'granted' ? `You joined on an invite and got ${d.accepted.days} Pro days.` : 'You joined on an invite.'));
+  }
   return root;
 }
 

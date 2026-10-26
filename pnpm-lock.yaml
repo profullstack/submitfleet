@@ -17,12 +17,18 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
+      '@profullstack/affiliates':
+        specifier: 0.3.0
+        version: 0.3.0
       '@profullstack/footer':
         specifier: ^0.4.0
         version: 0.4.0
       '@profullstack/profile':
         specifier: 0.1.6
         version: 0.1.6(@libsql/client@0.18.0)
+      '@profullstack/redeem-credits':
+        specifier: 0.2.0
+        version: 0.2.0
       '@profullstack/x402-gateway':
         specifier: ^0.13.1
         version: 0.13.1
@@ -32,6 +38,9 @@ importers:
       hono:
         specifier: 4.13.14
         version: 4.13.14
+      mailchecker:
+        specifier: 6.0.21
+        version: 6.0.21
       undici:
         specifier: ^8.12.3
         version: 8.12.3
@@ -364,6 +373,11 @@ packages:
     resolution: {integrity: sha512-adpW58ySPQMOUPv8pTKT3RIyCFqfUFt8X05ukPdtkQToXDVr8dMtxuenik1yx8tNFTbpApWsM/Hi5SzlIx48+Q==}
     engines: {node: '>=20.0.0'}
 
+  '@profullstack/affiliates@0.3.0':
+    resolution: {integrity: sha512-bp0iREciWetDWrQYOsa6SJRTzviekKwgJQuATT7vql+4equu7pN76q8tb3SP1oBMczydsv6rYUMvPpS6+QT7yQ==}
+    engines: {node: '>=22.13'}
+    hasBin: true
+
   '@profullstack/footer@0.4.0':
     resolution: {integrity: sha512-EJZnMUQmWDi9Gzx6BAjogloeaPFFSSCHtHJuC9dsXiOz8M87hfn6Z+Zx9AMYWk8s6xemPrPlkXKGB3PZugkcEA==}
     engines: {node: '>=18'}
@@ -391,6 +405,20 @@ packages:
         optional: true
       postgres:
         optional: true
+      react:
+        optional: true
+
+  '@profullstack/redeem-credits@0.2.0':
+    resolution: {integrity: sha512-JLowb7mWYfouIK7O522tuPPhvLjQjhdEfm6g3xEYrlNLGzLhrIADDhrYldBlGHfiVBWUFX7wefLuCSLF9fnyog==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  '@profullstack/referrals@0.1.0':
+    resolution: {integrity: sha512-u66SdBVpsv3kc0N+NWISPoYD5vjCERyv5wfD07iSkZwQeC2IA+ihX5jNA4e7Xr+Y4AUvxLycG+3b4VaROqzgRg==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=18'
+    peerDependenciesMeta:
       react:
         optional: true
 
@@ -982,6 +1010,10 @@ packages:
 
   magic-string@1.4.3:
     resolution: {integrity: sha512-z12OxmaPGE0F4xlpGdjuAUckipLpQlTAuAmyGhNoD7ODpYUzvDfvtxUbjM/jwznyP178oju/KDdyi220wNJ0RQ==}
+
+  mailchecker@6.0.21:
+    resolution: {integrity: sha512-Zd2Lgj4RMnC0IBbbSjnF76Wbd+kkgKMRONgV9yOMKJhj6hcKIAQtj9MrmiGnT2Db+Dy6MsMQoG2HEhPk2YPuGA==}
+    engines: {node: '>=0.10'}
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -1620,6 +1652,12 @@ snapshots:
       tslib: 2.8.1
       tsyringe: 4.10.0
 
+  '@profullstack/affiliates@0.3.0':
+    dependencies:
+      '@profullstack/referrals': 0.1.0
+    transitivePeerDependencies:
+      - react
+
   '@profullstack/footer@0.4.0': {}
 
   '@profullstack/keys@0.1.0': {}
@@ -1627,6 +1665,10 @@ snapshots:
   '@profullstack/profile@0.1.6(@libsql/client@0.18.0)':
     optionalDependencies:
       '@libsql/client': 0.18.0
+
+  '@profullstack/redeem-credits@0.2.0': {}
+
+  '@profullstack/referrals@0.1.0': {}
 
   '@profullstack/x402-gateway@0.13.1':
     dependencies:
@@ -2122,6 +2164,8 @@ snapshots:
   magic-string@1.4.3:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  mailchecker@6.0.21: {}
 
   math-intrinsics@1.1.0: {}
 

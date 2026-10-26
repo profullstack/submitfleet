@@ -64,6 +64,15 @@ Campaigns
   report export ID [--format markdown|json|csv]
   effort log --minutes M --activity TEXT [--campaign ID]
 
+Plan, codes and invites (signed in)
+  plan                                   your plan and Pro days
+  redeem CODE                            redeem a credit code for Pro days
+  invites [list] | invites create [--note TEXT] | invites accept CODE
+
+Credit codes (admin, local database)
+  credits mint --days N [--max 1] [--expires-days D] [--label L]   prints the code once
+  credits list | credits revoke ID
+
 Run
   worker [--once] [--interval-ms 5000]
   serve [--port 8787] [--no-worker]
@@ -155,6 +164,10 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       url: { type: 'string' },
       'no-browser': { type: 'boolean' },
       key: { type: 'string' },
+      days: { type: 'string' },
+      max: { type: 'string' },
+      'expires-days': { type: 'string' },
+      note: { type: 'string' },
     },
   });
   const [cmd, sub, arg] = pos;
@@ -206,6 +219,18 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const num = (v: unknown, d?: number) => (v === undefined ? d : Number(v));
   try {
     switch (cmd) {
+      case 'credits': {
+        if (sub === 'mint') {
+          if (!o.days) return usage('--days is required');
+          const m = await fleet.rewards.mint({ days: Number(o.days), maxRedemptions: o.max ? Number(o.max) : 1, expiresInDays: o['expires-days'] ? Number(o['expires-days']) : null, label: o.label as string | undefined, createdBy: 'cli' });
+          log('Give this code to the person. It is shown once; only its hash is stored.');
+          out({ code: m.code, id: m.id, days: m.grant.amount, max_redemptions: m.maxRedemptions, expires_at: m.expiresAt ? new Date(m.expiresAt).toISOString() : null, label: m.label });
+          return EXIT.ok;
+        }
+        if (sub === 'list') return out(await fleet.rewards.credits.list()), EXIT.ok;
+        if (sub === 'revoke' && arg) return await fleet.rewards.credits.revoke(arg), out({ revoked: arg }), EXIT.ok;
+        return usage();
+      }
       case 'init': {
         const k = await createApiKey(fleet.db, ws, 'owner', 'local owner');
         log('Workspace ready. Store this owner key now; it is not shown again:');
@@ -510,6 +535,20 @@ async function runRemote(cmd: string, sub: string | undefined, arg: string | und
         return null;
       case 'queue':
         return show(await remote('GET', '/human-queue'));
+      case 'plan':
+        return show(await remote('GET', '/plan'));
+      case 'redeem':
+        if (!sub) return null;
+        return show(await remote('POST', '/credits/redeem', { code: sub }));
+      case 'invites':
+        if (!sub || sub === 'list') return show(await remote('GET', '/invites'));
+        if (sub === 'create') {
+          const inv = (await remote('POST', '/invites', { note: (o.note as string) ?? undefined })) as { code: string };
+          const a = await accessToken();
+          return show({ ...inv, link: `${a.url.replace(/\/+$/, '')}/i/${inv.code}` });
+        }
+        if (sub === 'accept' && arg) return show(await remote('POST', '/invites/accept', { code: arg }));
+        return null;
       case 'submission':
         if (sub === 'get' && arg) return show(await remote('GET', `/submissions/${arg}`));
         if (sub === 'kit' && arg) return show(await remote('GET', `/submissions/${arg}/kit`));
