@@ -1,4 +1,5 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
+import { randomBytes } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,8 +29,20 @@ const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
 };
 
+// pit.world: the footer's newsletter form POSTs to pit.world/api/subscribe (connect-src),
+// falling back to a plain form POST to pit.world/subscribe without script (form-action).
 export const PAGE_CSP =
-  "default-src 'self'; script-src 'self' https://crawlproof.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://crawlproof.com; font-src 'self'; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self' http://127.0.0.1:* http://localhost:*";
+  "default-src 'self'; script-src 'self' https://crawlproof.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://crawlproof.com https://pit.world; font-src 'self'; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://pit.world http://127.0.0.1:* http://localhost:*";
+
+/** PAGE_CSP plus a per-response nonce in script-src, for the footer's inline subscribe script. */
+export function pageCsp(nonce?: string): string {
+  return nonce ? PAGE_CSP.replace("script-src 'self'", `script-src 'self' 'nonce-${nonce}'`) : PAGE_CSP;
+}
+
+/** A fresh CSP nonce for one response. */
+export function newNonce(): string {
+  return randomBytes(16).toString('base64');
+}
 
 export interface WebOptions {
   mailer: Mailer;
@@ -92,8 +105,8 @@ export const SITE_URL = 'https://submitfleet.com/';
  * /assets/pfs-footer.css (css: false here), so the footer does not depend on
  * style-src allowing inline styles.
  */
-export function siteFooter(links: { label: string; href: string }[]): Promise<string> {
-  return footerHtml({ site: SITE_URL, links, css: false });
+export function siteFooter(links: { label: string; href: string }[], nonce?: string): Promise<string> {
+  return footerHtml({ site: SITE_URL, links, css: false, nonce });
 }
 
 function safeNext(raw: string | undefined): string {
@@ -109,8 +122,8 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     const o = origin(c);
     return { origin: o, rpID: new URL(o).hostname, rpName: 'SubmitFleet' };
   };
-  const html = async (c: Context, body: string, status = 200) => {
-    c.header('content-security-policy', PAGE_CSP);
+  const html = async (c: Context, body: string, status = 200, nonce?: string) => {
+    c.header('content-security-policy', pageCsp(nonce));
     c.header('cache-control', 'no-store');
     return c.html(await withPitFooter(body), status as 200);
   };
@@ -153,23 +166,25 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
   // ── Pages ──
   app.get('/', async (c) => {
     const stats = await fleet.catalogStats();
+    const nonce = newNonce();
     const body = page('index.html')
-      .replace('{{FOOTER}}', await siteFooter([{ label: 'Docs', href: '/docs' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }, { label: 'Sign in', href: '/login' }]))
+      .replace('{{FOOTER}}', await siteFooter([{ label: 'Docs', href: '/docs' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }, { label: 'Sign in', href: '/login' }], nonce))
       .replaceAll('{{TOTAL}}', String(stats.total))
       .replaceAll('{{FREE}}', String(stats.free))
       .replaceAll('{{DIRECTORIES}}', String((stats.by_channel.directory ?? 0) + (stats.by_channel.citation ?? 0)))
       .replaceAll('{{LAUNCH}}', String(stats.by_channel['product-launch-site'] ?? 0))
       .replaceAll('{{AUTOMATED}}', String(stats.automated));
-    return html(c, body);
+    return html(c, body, 200, nonce);
   });
   // Sign-up asks for the profile fields (the form has its own email box); sign-in never does.
   const signupFields = renderProfileFields({ fields: ['first_name', 'last_name', 'company_domain', 'job_title', 'linkedin_url'] });
   app.get('/signup', (c) => html(c, page('auth.html').replace('{{PROFILE_FIELDS}}', signupFields)));
   app.get('/login', (c) => html(c, page('auth.html').replace('{{PROFILE_FIELDS}}', '')));
   app.get('/auth/link', (c) => html(c, page('link.html')));
-  app.get('/docs', async (c) =>
-    html(c, page('docs.html').replace('{{FOOTER}}', await siteFooter([{ label: 'Home', href: '/' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }]))),
-  );
+  app.get('/docs', async (c) => {
+    const nonce = newNonce();
+    return html(c, page('docs.html').replace('{{FOOTER}}', await siteFooter([{ label: 'Home', href: '/' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }], nonce)), 200, nonce);
+  });
   app.get('/.well-known/openwebring.json', () => descriptorResponse({ site: SITE_URL, name: 'SubmitFleet' }));
   const appShell = async (c: Context) => {
     const user = await auth.sessionUser(fleet.db, getCookie(c, auth.SESSION_COOKIE));
