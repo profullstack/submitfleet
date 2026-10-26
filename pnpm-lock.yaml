@@ -20,6 +20,9 @@ importers:
       '@profullstack/footer':
         specifier: ^0.2.4
         version: 0.2.4
+      '@profullstack/profile':
+        specifier: 0.1.3
+        version: 0.1.3(@libsql/client@0.18.0)
       '@profullstack/x402-gateway':
         specifier: ^0.11.0
         version: 0.11.0
@@ -366,6 +369,22 @@ packages:
   '@profullstack/keys@0.1.0':
     resolution: {integrity: sha512-Vys47LvS5ivhdZu4SYOxh9Le3DEmWhjP0+CtrU45RhXAbY0ZFG/2Dk9V1bIIUGDp8UWMJqctvUD21JrNjfh04w==}
     engines: {node: '>=20.11'}
+
+  '@profullstack/profile@0.1.3':
+    resolution: {integrity: sha512-P+VdOqCnNGWa5W8EGLU/ls3hwovRcY8bOBOhWZp3h23sW2LDMFyeWF/pUfO+iiYH3E2Tie2/9xyUnpO4ctwSHw==}
+    engines: {node: '>=20'}
+    hasBin: true
+    peerDependencies:
+      '@libsql/client': '>=0.6.0'
+      postgres: ^3.4.0
+      react: '>=18'
+    peerDependenciesMeta:
+      '@libsql/client':
+        optional: true
+      postgres:
+        optional: true
+      react:
+        optional: true
 
   '@profullstack/x402-gateway@0.11.0':
     resolution: {integrity: sha512-Lfrz+SRTwQZfcoCaVtaaMNPJx74Lp/5oyS7vJJAEuJmH1TjBzhE7dWquISkj1p42oc+VW5I9xH9p7YhEKqmr4Q==}
@@ -1580,6 +1599,10 @@ snapshots:
   '@profullstack/footer@0.2.4': {}
 
   '@profullstack/keys@0.1.0': {}
+
+  '@profullstack/profile@0.1.3(@libsql/client@0.18.0)':
+    optionalDependencies:
+      '@libsql/client': 0.18.0
 
   '@profullstack/x402-gateway@0.11.0':
     dependencies:

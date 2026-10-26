@@ -52,7 +52,6 @@ if (location.pathname === '/auth/link') {
   if (signup) {
     $('#title').textContent = 'Create your account';
     $('#subtitle').textContent = 'Free to start. We email you once to confirm the address.';
-    $('#name-field').hidden = false;
     $('#password').autocomplete = 'new-password';
     $('#password-hint').hidden = false;
     $('#submit').textContent = 'Create account';
@@ -93,15 +92,22 @@ if (location.pathname === '/auth/link') {
     const email = $('#email').value.trim();
     const password = $('#password').value;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return say('Enter a valid email address.', 'bad');
+    // Sign-up profile fields (rendered on /signup only); first and last name are required.
+    const profile = {};
+    for (const k of ['first_name', 'last_name', 'company_domain', 'job_title', 'linkedin_url']) {
+      const el = document.querySelector(`#form [name="${k}"]`);
+      if (el) profile[k] = el.value.trim();
+    }
+    if (signup && (!profile.first_name || !profile.last_name)) return say('Enter your first and last name.', 'bad');
     const btn = $('#submit');
     btn.disabled = true;
     try {
       if (mode === 'link') {
-        const r = await post(signup ? '/api/auth/signup' : '/api/auth/magic', { email, name: $('#name').value.trim() || undefined });
+        const r = await post(signup ? '/api/auth/signup' : '/api/auth/magic', signup ? { email, ...profile } : { email });
         say(r.message, 'ok');
       } else if (signup) {
         if (password.length < 10) throw new Error('Use a password of at least 10 characters, or choose "Email link only".');
-        const r = await post('/api/auth/signup', { email, password, name: $('#name').value.trim() || undefined });
+        const r = await post('/api/auth/signup', { email, password, ...profile });
         say(`${r.message} Open it to confirm your account.`, 'ok');
       } else {
         await post('/api/auth/login', { email, password });

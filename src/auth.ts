@@ -7,6 +7,7 @@ import {
   type AuthenticatorTransportFuture,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
+import { createProfileStore, saveSignupProfile } from '@profullstack/profile';
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { all, one, run, type Db } from './db.js';
@@ -178,13 +179,19 @@ export async function consumeEmailToken(db: Db, token: string, now = Date.now())
   const n = await run(db, 'UPDATE email_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?', ts, h, ts);
   if (n !== 1) throw new SubmitFleetError('link_invalid', 'this link has expired or was already used; request a new one');
   const row = (await one<{ email: string; purpose: LinkPurpose; data_json: string }>(db, 'SELECT email, purpose, data_json FROM email_tokens WHERE token_hash = ?', h))!;
-  const data = parseJson<{ name?: string; password_hash?: string }>(row.data_json, {});
+  const data = parseJson<{ name?: string; password_hash?: string; profile?: Record<string, string | null> }>(row.data_json, {});
   const existing = await getUserByEmail(db, row.email);
   if (existing) {
     await run(db, 'UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?), failed_logins = 0, locked_until = NULL WHERE id = ?', ts, existing.id);
     return { user: existing, created: false, purpose: row.purpose };
   }
   const user = await createUser(db, row.email, { name: data.name ?? null, passwordHash: data.password_hash ?? null });
+  if (data.profile) {
+    // The fields were validated when the link was requested; a failed save never blocks sign-up.
+    await saveSignupProfile(createProfileStore(db), user.id, data.profile, { email: user.email }).catch((e) =>
+      console.error('[submitfleet] signup profile save failed:', e instanceof Error ? e.message : e),
+    );
+  }
   return { user, created: true, purpose: row.purpose };
 }
 

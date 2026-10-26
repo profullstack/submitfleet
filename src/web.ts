@@ -7,6 +7,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 import { descriptorResponse, footerHtml, latestTemplate } from '@profullstack/footer';
 import * as auth from './auth.js';
+import { PROFILE_ENHANCE_SCRIPT, renderProfileFields, validateProfile } from '@profullstack/profile';
 import { escapeHtml } from './adapters/tinylaunch.js';
 import { loginMail, signupMail, type Mailer } from './mail.js';
 import * as oauth from './oauth.js';
@@ -161,7 +162,10 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
       .replaceAll('{{AUTOMATED}}', String(stats.automated));
     return html(c, body);
   });
-  for (const p of ['/signup', '/login']) app.get(p, (c) => html(c, page('auth.html')));
+  // Sign-up asks for the profile fields (the form has its own email box); sign-in never does.
+  const signupFields = renderProfileFields({ fields: ['first_name', 'last_name', 'company_domain', 'job_title', 'linkedin_url'] });
+  app.get('/signup', (c) => html(c, page('auth.html').replace('{{PROFILE_FIELDS}}', signupFields)));
+  app.get('/login', (c) => html(c, page('auth.html').replace('{{PROFILE_FIELDS}}', '')));
   app.get('/auth/link', (c) => html(c, page('link.html')));
   app.get('/docs', async (c) =>
     html(c, page('docs.html').replace('{{FOOTER}}', await siteFooter([{ label: 'Home', href: '/' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }]))),
@@ -180,6 +184,10 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
       'content-type': 'text/css; charset=utf-8',
       'cache-control': 'public, max-age=300',
     }),
+  );
+  // Fills company domain from a work email; a file, not inline, because of PAGE_CSP.
+  app.get('/assets/profile-enhance.js', (c) =>
+    c.body(PROFILE_ENHANCE_SCRIPT, 200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'public, max-age=300' }),
   );
   app.get('/assets/*', (c) => {
     const f = files.get(c.req.path.replace(/^\//, ''));
@@ -202,11 +210,28 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
   const emailBody = z.object({ email: z.string().max(254) });
   app.post('/api/auth/signup', async (c) => {
     guard(c);
-    const b = await json(c, z.object({ email: z.string().max(254), password: z.string().max(200).optional(), name: z.string().max(80).optional() }));
+    const field = z.string().max(300).nullish();
+    const b = await json(
+      c,
+      z.object({
+        email: z.string().max(254),
+        password: z.string().max(200).optional(),
+        name: z.string().max(80).optional(),
+        first_name: field,
+        last_name: field,
+        company_domain: field,
+        job_title: field,
+        linkedin_url: field,
+      }),
+    );
     const email = auth.normalizeEmail(b.email);
     if (b.password) auth.checkPasswordStrength(b.password);
+    const profile = validateProfile({ ...b, email });
+    if (!profile.ok) throw new SubmitFleetError('invalid_request', Object.values(profile.errors)[0] ?? 'check the profile fields', profile.errors);
     if (limited(c, 'signup', 10, 10)) return c.json(SENT);
-    await sendLink(c, email, 'signup', { name: b.name?.trim() || null, password_hash: b.password ? await auth.hashPassword(b.password) : null });
+    const name = b.name?.trim() || [profile.profile.first_name, profile.profile.last_name].filter(Boolean).join(' ') || null;
+    // The validated profile rides on the link and is saved when the account is created.
+    await sendLink(c, email, 'signup', { name, password_hash: b.password ? await auth.hashPassword(b.password) : null, profile: profile.profile });
     return c.json(SENT);
   });
   app.post('/api/auth/magic', async (c) => {

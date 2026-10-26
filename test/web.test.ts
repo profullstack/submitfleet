@@ -97,7 +97,7 @@ describe('webring footer', () => {
 describe('accounts', () => {
   it('signs up through the emailed link only, then signs in with the password', async () => {
     jar.clear();
-    const r = await req('POST', '/api/auth/signup', { email: 'Ann@Example.com', password: 'correct horse battery', name: 'Ann' });
+    const r = await req('POST', '/api/auth/signup', { email: 'Ann@Example.com', password: 'correct horse battery', name: 'Ann', first_name: 'Ann', last_name: 'Example' });
     expect(r.status).toBe(200);
     expect(mails).toHaveLength(1);
     expect(mails[0]!.to).toBe('ann@example.com');
@@ -117,13 +117,52 @@ describe('accounts', () => {
     expect((await req('GET', '/app')).status).toBe(200);
   });
 
+  it('asks for the profile on sign-up only, refuses a sign-up without a name, and stores the fields on confirm', async () => {
+    jar.clear();
+    const signupHtml = await (await req('GET', '/signup')).text();
+    for (const f of ['first_name', 'last_name', 'company_domain', 'job_title', 'linkedin_url']) expect(signupHtml).toContain(`name="${f}"`);
+    expect(signupHtml.match(/name="email"/g)).toHaveLength(1);
+    expect(await (await req('GET', '/login')).text()).not.toContain('name="job_title"');
+    expect((await req('GET', '/assets/profile-enhance.js')).headers.get('content-type')).toContain('javascript');
+
+    const bad = await req('POST', '/api/auth/signup', { email: 'ada@acme.com', password: 'correct horse battery' });
+    expect(bad.status).toBe(400);
+    expect(mails).toHaveLength(0);
+
+    await req('POST', '/api/auth/signup', {
+      email: 'Ada@Acme.com',
+      password: 'correct horse battery',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      company_domain: 'https://www.acme.com/about',
+      job_title: 'VP Engineering',
+      linkedin_url: 'in/ada-lovelace',
+    });
+    expect((await req('GET', '/api/v1/me/profile')).status).toBe(401);
+    await req('POST', '/api/auth/link', { token: tokenFrom(mails[0]!) });
+    const me = await (await req('GET', '/api/me')).json();
+    expect(me.user.name).toBe('Ada Lovelace');
+    const { profile } = await (await req('GET', '/api/v1/me/profile')).json();
+    expect(profile).toMatchObject({
+      email: 'ada@acme.com',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      company_domain: 'acme.com',
+      job_title: 'VP Engineering',
+      linkedin_url: 'https://www.linkedin.com/in/ada-lovelace',
+    });
+    const patched = await (await req('PATCH', '/api/v1/me/profile', { job_title: 'CTO' })).json();
+    expect(patched.profile.job_title).toBe('CTO');
+    expect((await req('PATCH', '/api/v1/me/profile', { job_title: 'CEO' }, { origin: 'https://evil.example' })).status).toBe(403);
+  });
+
   it('never reveals whether an address has an account', async () => {
     jar.clear();
     await req('POST', '/api/auth/magic', { email: 'new@example.com' });
     await req('POST', '/api/auth/link', { token: tokenFrom(mails[0]!) });
     jar.clear();
-    const a = await (await req('POST', '/api/auth/signup', { email: 'new@example.com', password: 'another password 1' })).json();
-    const b = await (await req('POST', '/api/auth/signup', { email: 'nobody@example.com', password: 'another password 1' })).json();
+    const a = await (await req('POST', '/api/auth/signup', { email: 'new@example.com', password: 'another password 1', first_name: 'N', last_name: 'B' })).json();
+    const b = await (await req('POST', '/api/auth/signup', { email: 'nobody@example.com', password: 'another password 1', first_name: 'N', last_name: 'B' })).json();
     expect(a).toEqual(b);
     // The existing account got a plain sign-in link; its (absent) password was not set by the sign-up attempt.
     expect(mails[1]!.subject).toMatch(/sign-in link/);
@@ -134,7 +173,7 @@ describe('accounts', () => {
 
   it('locks password sign-in after ten failures but the emailed link still works', async () => {
     jar.clear();
-    await req('POST', '/api/auth/signup', { email: 'lock@example.com', password: 'the real password' });
+    await req('POST', '/api/auth/signup', { email: 'lock@example.com', password: 'the real password', first_name: 'L', last_name: 'K' });
     await req('POST', '/api/auth/link', { token: tokenFrom(mails[0]!) });
     jar.clear();
     for (let i = 0; i < 10; i++) await req('POST', '/api/auth/login', { email: 'lock@example.com', password: `nope nope ${i}` });
