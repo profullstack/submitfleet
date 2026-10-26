@@ -2,3 +2,4 @@ allowBuilds:
   esbuild: true
 minimumReleaseAgeExclude:
   - '@profullstack/x402-gateway@0.11.0'
+  - '@profullstack/profile@0.1.3'

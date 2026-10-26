@@ -345,4 +345,33 @@ ALTER TABLE api_keys ADD COLUMN last_used_at TEXT;
 ALTER TABLE products ADD COLUMN logo_mime TEXT
 `,
   },
+  {
+    // Signup profile (@profullstack/profile): `profile schema --dialect sqlite --key user_id --key-type text`,
+    // then a one-time backfill of every user's email and their name split on the first space.
+    version: 3,
+    sql: `
+CREATE TABLE IF NOT EXISTS "user_profiles" (
+  "user_id" text primary key,
+  "email" text,
+  "first_name" text,
+  "last_name" text,
+  "company_domain" text,
+  "job_title" text,
+  "linkedin_url" text,
+  "created_at" text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  "updated_at" text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS "user_profiles_email" ON "user_profiles" (lower("email"));
+CREATE INDEX IF NOT EXISTS "user_profiles_company_domain" ON "user_profiles" ("company_domain");
+INSERT INTO user_profiles (user_id, email, first_name, last_name)
+SELECT id, lower(email),
+  NULLIF(CASE WHEN instr(trim(COALESCE(name, '')), ' ') > 0 THEN substr(trim(name), 1, instr(trim(name), ' ') - 1) ELSE trim(COALESCE(name, '')) END, ''),
+  NULLIF(CASE WHEN instr(trim(COALESCE(name, '')), ' ') > 0 THEN trim(substr(trim(name), instr(trim(name), ' ') + 1)) END, '')
+FROM users WHERE true
+ON CONFLICT (user_id) DO UPDATE SET
+  email = COALESCE(user_profiles.email, excluded.email),
+  first_name = COALESCE(user_profiles.first_name, excluded.first_name),
+  last_name = COALESCE(user_profiles.last_name, excluded.last_name)
+`,
+  },
 ];

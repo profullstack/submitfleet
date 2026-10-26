@@ -90,6 +90,10 @@ pre code { background: none; border: 0; padding: 0; }
 label { display: block; font-weight: 600; font-size: 13px; margin: 0 0 6px; color: var(--fg-2); }
 .field { margin: 0 0 16px; }
 .hint { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+.pfs-profile { border: 0; padding: 0; margin: 0; min-width: 0; }
+.pfs-profile__row { margin: 0 0 16px; }
+.pfs-profile__optional { font-weight: 400; color: var(--muted); }
+.pfs-profile__error { font-size: 12.5px; color: var(--bad, #c0392b); margin: 5px 0 0; }
 input[type=text], input[type=email], input[type=password], input[type=url], input[type=search], textarea, select {
   width: 100%; min-height: 42px; padding: 9px 12px; border-radius: var(--radius-sm);
   border: 1px solid var(--line-2); background: var(--card); color: var(--fg); font: 15px/1.4 var(--font);

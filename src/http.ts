@@ -10,6 +10,8 @@ import { createCrawlGate, type CrawlGate } from './crawl-gate.js';
 import { x402Gateway } from '@profullstack/x402-gateway/hono';
 import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
+import { createProfileStore, mountProfileRoutes } from '@profullstack/profile';
+import { getUser } from './auth.js';
 import type { Actor } from './workspaces.js';
 
 type Env = { Variables: { actor: Actor } };
@@ -155,6 +157,17 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
   api.use('*', originGuard, auth);
   const A = (c: Context<Env>) => c.get('actor');
   const page = (c: Context) => ({ limit: Math.min(Number(c.req.query('limit') ?? 100) || 100, 500), offset: Number(c.req.query('offset') ?? 0) || 0 });
+
+  // GET/PUT/PATCH /api/v1/me/profile: the signed-in person's profile (session or a user's token).
+  mountProfileRoutes(api, {
+    path: '/me/profile',
+    store: createProfileStore(fleet.db),
+    getUser: async (_req: Request, c: Context<Env>) => {
+      const id = c.get('actor').id;
+      const user = id.startsWith('user:') ? await getUser(fleet.db, id.slice(5)) : null;
+      return user ? { id: user.id, email: user.email } : null;
+    },
+  });
 
   api.get('/whoami', (c) => c.json({ workspace_id: A(c).workspaceId, role: A(c).role, key_id: A(c).id }));
 

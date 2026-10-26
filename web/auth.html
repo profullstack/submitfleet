@@ -23,14 +23,11 @@
         <button role="tab" id="tab-link" aria-selected="false" type="button">Email me a link</button>
       </div>
       <form id="form" novalidate>
-        <div class="field" id="name-field" hidden>
-          <label for="name">Your name <span class="muted">(optional)</span></label>
-          <input id="name" name="name" type="text" autocomplete="name" maxlength="80">
-        </div>
         <div class="field">
           <label for="email">Email</label>
           <input id="email" name="email" type="email" autocomplete="username webauthn" required>
         </div>
+        {{PROFILE_FIELDS}}
         <div class="field" id="password-field">
           <label for="password">Password</label>
           <input id="password" name="password" type="password" autocomplete="current-password" minlength="10">
@@ -43,5 +40,6 @@
   </div>
 </main>
 <script src="/assets/auth.js" type="module"></script>
+<script src="/assets/profile-enhance.js" defer></script>
 </body>
 </html>

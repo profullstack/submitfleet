@@ -616,6 +616,23 @@ async function settingsPage() {
   const keys = await api('/keys');
   const root = h('div', {}, pageHead('Settings', me.user?.email));
 
+  // Profile (@profullstack/profile fields; GET/PATCH /api/v1/me/profile)
+  const { profile } = await api('/me/profile');
+  const PROFILE = [['first_name', 'First name', 'text', 'given-name'], ['last_name', 'Last name', 'text', 'family-name'], ['company_domain', 'Company domain', 'text', 'organization'], ['job_title', 'Job title', 'text', 'organization-title'], ['linkedin_url', 'LinkedIn', 'url', 'url']];
+  const inputs = Object.fromEntries(PROFILE.map(([k, , type, ac]) => [k, h('input', { type, name: k, autocomplete: ac, value: profile?.[k] ?? '' })]));
+  root.append(h('div', { class: 'section-title' }, 'Profile'),
+    h('div', { class: 'card' }, PROFILE.map(([k, label]) => h('div', { class: 'field' }, h('label', {}, label), inputs[k])),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', onclick: async () => {
+        try {
+          const body = Object.fromEntries(PROFILE.map(([k]) => [k, inputs[k].value.trim() || null]));
+          const r = await api('/me/profile', { method: 'PATCH', body: JSON.stringify(body) });
+          for (const [k] of PROFILE) inputs[k].value = r.profile?.[k] ?? '';
+          toast('Profile saved');
+        } catch (e) {
+          toast(e.message);
+        }
+      } }, 'Save profile'))));
+
   // Passkeys
   const pkList = h('div', { class: 'list' }, me.passkeys.length ? me.passkeys.map((k) => h('div', { class: 'item' }, h('span', {}, '🔑'),
     h('div', {}, h('div', { class: 'title' }, k.name || 'Passkey'), h('div', { class: 'sub' }, h('span', {}, `added ${when(k.created_at)}`), k.last_used_at ? h('span', {}, `· last used ${when(k.last_used_at)}`) : null)),
