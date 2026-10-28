@@ -57,7 +57,7 @@
     "@profullstack/redeem-credits": "0.2.0",
     "@profullstack/sealed-secrets": "0.1.0",
     "@profullstack/webhooks": "0.2.1",
-    "@profullstack/x402-gateway": "^0.15.3",
+    "@profullstack/x402-gateway": "^0.16.1",
     "@simplewebauthn/server": "^14.0.3",
     "hono": "4.13.14",
     "mailchecker": "6.0.21",
