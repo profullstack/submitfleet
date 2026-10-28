@@ -51,7 +51,7 @@ Live at https://submitfleet.com.
   parallel workers cannot overspend.
 - **Stops.** Global pause, campaign pause, account disconnect and destination disable all stop new
   writes. Cancel stops unsent work and never claims remote deletion.
-- **Secrets.** Account credentials are sealed with AES-256-GCM and never appear in model context,
+- **Secrets.** Account credentials are sealed to your workspace key vault (a passphrase only you hold; the server cannot open them) and run only while you have unlocked it. They never appear in model context,
   reports or logs. Workspaces are isolated.
 - **Reports.** Original target set, exclusions, receipts, listing URLs, unresolved jobs, effort and
   itemized cost, in Markdown, JSON or CSV. Missing analytics or effort stay unknown, never zero.
@@ -66,6 +66,7 @@ node dist/cli.js coverage report      # exit 3 while below 100
 node dist/cli.js products add https://your-product.example --name "Name" --tagline "..." \
   --description "..." --logo logo.png --field tinylaunch.category_id=9
 node dist/cli.js products approve PRODUCT_ID
+node dist/cli.js vault init                # passphrase + one-time recovery key; credentials are sealed to it
 node dist/cli.js accounts connect tinylaunch --email you@example.com
 node dist/cli.js campaign plan --product PRODUCT_ID --free-only --min-executable-destinations 100
 node dist/cli.js campaign preview CAMPAIGN_ID
@@ -84,7 +85,7 @@ command. Exit codes: 0 ok, 1 error, 2 usage, 3 gate not met, 4 jobs waiting for 
 | --- | --- |
 | `SUBMITFLEET_HOME` | `~/.local/share/submitfleet` |
 | `SUBMITFLEET_DB_URL` / `SUBMITFLEET_DB_AUTH_TOKEN` | local SQLite file; set a `libsql://` URL for Turso |
-| `SUBMITFLEET_SECRET_KEY` | generated key file in `SUBMITFLEET_HOME` (hosted: inject from the vault) |
+| `SUBMITFLEET_SECRET_KEY` | generated key file in `SUBMITFLEET_HOME` (hosted: inject from the vault). Seals webhook signing secrets; it can NOT open account credentials (those are sealed to the workspace key vault and open only while unlocked: `submitfleet vault unlock --ttl 8h`, `worker --unlock`, `serve --unlock`). It still opens legacy v1 account rows once, during the owner's unlock, until `LEGACY_KEY_MIGRATION=off`. |
 | `SUBMITFLEET_ASSETS_DIR` | `$SUBMITFLEET_HOME/assets` |
 | `PORT`, `HOST` | `8787`, `127.0.0.1` |
 | `SUBMITFLEET_ALLOWED_ORIGINS` | none (same-origin only) |

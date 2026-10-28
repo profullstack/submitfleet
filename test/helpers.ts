@@ -1,3 +1,5 @@
+import { bytesToBase64 } from '@profullstack/sealed-secrets';
+import { sealer as vaultSealer } from '../src/vault.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -124,4 +126,12 @@ export async function launch(h: Harness, productId: string, min: number, extra: 
   await h.fleet.approvalGrant(h.owner, plan.campaign.id);
   await h.fleet.campaignRun(h.owner, plan.campaign.id);
   return plan;
+}
+
+/** A workspace key vault, created and unlocked as the owner's client would (passphrase stays here). */
+export async function vaultUp(fleet: SubmitFleet, owner: Actor, ttl?: string) {
+  const made = await vaultSealer.createSeal('test vault passphrase', owner.workspaceId);
+  await fleet.vaultCreate(owner, made.seal);
+  await fleet.vaultUnlock(owner, bytesToBase64(made.dek), ttl ?? null);
+  return made;
 }

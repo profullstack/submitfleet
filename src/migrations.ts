@@ -418,4 +418,15 @@ CREATE INDEX invite_acceptances_inviter ON invite_acceptances (inviter_id, statu
     version: 5,
     sql: schemaSql('sqlite').join(';\n'),
   },
+  {
+    // Unlock-on-use (2026-10-28): each workspace's key vault record. Account
+    // secrets are sealed to it ("v2." in accounts.sealed_secret); nothing here
+    // opens without the owner's passphrase or recovery key.
+    version: 6,
+    sql: `CREATE TABLE workspace_vaults (
+  workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),
+  seal TEXT NOT NULL,
+  created_at TEXT NOT NULL
+)`,
+  },
 ];

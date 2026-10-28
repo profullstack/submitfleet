@@ -51,6 +51,9 @@ Products
 Accounts
   accounts connect DESTINATION --email EMAIL   emailed-code handoff; the code is typed here, never stored
   accounts list | accounts disconnect ID
+  vault init | unlock [--ttl 8h|7d] [--recovery] | lock | status
+                                               account credentials are sealed with a passphrase only you
+                                               hold; account-based submissions run only while unlocked
 
 Campaigns
   campaign plan --product ID [--free-only] [--auto-only] [--min-executable-destinations N] [--spend-limit-cents 0]
@@ -103,6 +106,87 @@ async function confirmTty(question: string, expect: string): Promise<boolean> {
   const answer = await rl.question(`${question}\nType "${expect}" to confirm: `);
   rl.close();
   return answer.trim() === expect;
+}
+
+/** A passphrase prompt that does not echo. */
+async function promptSecret(q: string): Promise<string> {
+  if (!process.stdin.isTTY) return readFileSync(0, 'utf8').split('\n')[0]!.trim();
+  process.stderr.write(q);
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  let buf = '';
+  return new Promise((resolve) => {
+    const onData = (d: Buffer) => {
+      for (const ch of d.toString('utf8')) {
+        if (ch === '\r' || ch === '\n') {
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+          process.stdin.off('data', onData);
+          process.stderr.write('\n');
+          return resolve(buf);
+        }
+        if (ch === '\u0003') process.exit(130);
+        if (ch === '\u007f') buf = buf.slice(0, -1);
+        else buf += ch;
+      }
+    };
+    process.stdin.on('data', onData);
+  });
+}
+
+/**
+ * submitfleet vault init | unlock [--ttl 8h] [--recovery] | lock | status
+ * The passphrase is typed and used HERE; only the sealed record (init) or the
+ * derived data key (unlock) goes to the server.
+ */
+async function vaultCommand(sub: string | undefined, o: Record<string, unknown>, call: (method: string, path: string, body?: unknown) => Promise<unknown>): Promise<unknown> {
+  const { bytesToBase64, wipe } = await import('@profullstack/sealed-secrets');
+  const { sealer } = await import('./vault.js');
+  const status = (await call('GET', '/vault')) as { exists: boolean; seal: never; unlocked: boolean; expires_at: string | null };
+  const me = (await call('GET', '/api/me').catch(() => null)) as { workspace_id?: string } | null;
+  if (!sub || sub === 'status') return { exists: status.exists, unlocked: status.unlocked, expires_at: status.expires_at };
+  if (sub === 'lock') return call('POST', '/vault/lock');
+  const ws = me?.workspace_id;
+  if (!ws) throw new SubmitFleetError('invalid_request', 'could not tell which workspace this is');
+  if (sub === 'init') {
+    if (status.exists) throw new SubmitFleetError('vault_exists', 'this workspace already has a key vault');
+    const p1 = await promptSecret('New vault passphrase (12+ characters): ');
+    const p2 = await promptSecret('Again: ');
+    if (p1 !== p2) throw new SubmitFleetError('invalid_request', 'the passphrases differ');
+    if (p1.length < 12) throw new SubmitFleetError('invalid_request', 'use at least 12 characters');
+    const made = await sealer.createSeal(p1, ws);
+    try {
+      await call('POST', '/vault', { seal: made.seal });
+      const u = await call('POST', '/vault/unlock', { data_key: bytesToBase64(made.dek), ...(o.ttl ? { ttl: String(o.ttl) } : {}) });
+      return { created: true, recovery_key: made.recoveryKey, note: 'Store the recovery key now; it is shown once. Lost passphrase and recovery key = re-enter your account credentials.', ...(u as object) };
+    } finally {
+      wipe(made.dek);
+    }
+  }
+  if (sub === 'unlock') {
+    if (!status.exists) throw new SubmitFleetError('vault_missing', 'run submitfleet vault init first');
+    const secret = await promptSecret(o.recovery ? 'Recovery key: ' : 'Vault passphrase: ');
+    const dek = o.recovery ? await sealer.unlockSealWithRecovery(status.seal, secret, ws) : await sealer.unlockSeal(status.seal, secret, ws);
+    try {
+      return await call('POST', '/vault/unlock', { data_key: bytesToBase64(dek), ...(o.ttl ? { ttl: String(o.ttl) } : {}) });
+    } finally {
+      wipe(dek);
+    }
+  }
+  throw new SubmitFleetError('invalid_request', 'usage: submitfleet vault init | unlock [--ttl 8h] [--recovery] | lock | status');
+}
+
+/** vaultCommand's transport for the local database (this process acts as the owner). */
+function localVaultCall(fleet: SubmitFleet, owner: Actor) {
+  return async (method: string, path: string, body?: unknown): Promise<unknown> => {
+    const b = (body ?? {}) as { seal?: unknown; data_key?: string; ttl?: string };
+    if (path === '/api/me') return { workspace_id: owner.workspaceId };
+    if (method === 'GET' && path === '/vault') return fleet.vaultStatus(owner);
+    if (path === '/vault') return fleet.vaultCreate(owner, b.seal);
+    if (path === '/vault/unlock') return fleet.vaultUnlock(owner, b.data_key ?? '', b.ttl ?? null);
+    if (path === '/vault/lock') return fleet.vaultLock(owner);
+    throw new SubmitFleetError('invalid_request', path);
+  };
 }
 
 async function promptLine(q: string): Promise<string> {
@@ -335,6 +419,13 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         }
         return usage();
       }
+      case 'vault': {
+        // Local: init/status/lock work on this database. The key lives in the
+        // memory of the process that runs the worker, so unlock with
+        // `submitfleet worker --unlock` / `serve --unlock`, or sign in to that server.
+        if (sub === 'unlock') throw new SubmitFleetError('unsupported_operation', 'unlock in the worker process: submitfleet worker --unlock (or serve --unlock)');
+        return out(await vaultCommand(sub, o, localVaultCall(fleet, owner))), EXIT.ok;
+      }
       case 'accounts': {
         if (sub === 'list') return out(await fleet.accountStatus(owner)), EXIT.ok;
         if (sub === 'disconnect' && arg) return await fleet.accountDisconnect(owner, arg), out({ disconnected: arg }), EXIT.ok;
@@ -417,12 +508,14 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         return EXIT.ok;
       }
       case 'worker': {
+        if (o.unlock) out(await vaultCommand('unlock', o, localVaultCall(fleet, owner)));
         const w = fleet.worker();
         if (o.once) return out(await w.tick(50)), EXIT.ok;
         await loop(w, num(o['interval-ms'], 5000)!);
         return EXIT.ok;
       }
       case 'serve': {
+        if (o.unlock) out(await vaultCommand('unlock', o, localVaultCall(fleet, owner)));
         const loaded = await fleet.loadBundledCatalog();
         log(`catalog: ${loaded.created} added, ${loaded.updated} refreshed, ${loaded.seeded} reviewed records applied`);
         const port = num(o.port, Number(process.env.PORT ?? 8787))!;
@@ -589,6 +682,8 @@ async function runRemote(cmd: string, sub: string | undefined, arg: string | und
           enable: (id, enabled) => remote('PATCH', `/webhooks/${encodeURIComponent(id)}`, { enabled }),
           deliveries: (id) => remote('GET', id ? `/webhooks/${encodeURIComponent(id)}/deliveries` : '/webhooks/deliveries'),
         });
+      case 'vault':
+        return show(await vaultCommand(sub, o, remote));
       case 'mcp':
         await mcpStdioProxy();
         return EXIT.ok;

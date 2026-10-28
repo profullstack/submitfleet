@@ -29,6 +29,9 @@ importers:
       '@profullstack/redeem-credits':
         specifier: 0.2.0
         version: 0.2.0
+      '@profullstack/sealed-secrets':
+        specifier: 0.1.0
+        version: 0.1.0
       '@profullstack/webhooks':
         specifier: 0.2.1
         version: 0.2.1
@@ -424,6 +427,10 @@ packages:
     peerDependenciesMeta:
       react:
         optional: true
+
+  '@profullstack/sealed-secrets@0.1.0':
+    resolution: {integrity: sha512-6LRa+yUT7PQ5tZNoYEnf3VVxsyw/dqHqAtYpk/aS/bntxf3mQH+2MwNjQoBd7fCqdN97TvZup8qhrpfUcZlfng==}
+    engines: {node: '>=20'}
 
   '@profullstack/webhooks@0.2.1':
     resolution: {integrity: sha512-QHeSkpu4O44oJ620qhQqxqFlD3u/OhupmXRnBHw4MGKuDTa0R+Y/727nnF7psSHxxSfnbWfNuVl15z3IXuaZiw==}
@@ -1676,6 +1683,8 @@ snapshots:
   '@profullstack/redeem-credits@0.2.0': {}
 
   '@profullstack/referrals@0.1.0': {}
+
+  '@profullstack/sealed-secrets@0.1.0': {}
 
   '@profullstack/webhooks@0.2.1': {}
 

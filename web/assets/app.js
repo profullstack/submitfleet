@@ -617,6 +617,31 @@ async function settingsPage() {
   const keys = await api('/keys');
   const root = h('div', {}, pageHead('Settings', me.user?.email));
 
+  // Workspace key vault (unlock-on-use). The passphrase is only ever typed into
+  // the CLI, which sends the server a sealed record or a derived key, never it.
+  const vault = await api('/vault').catch(() => null);
+  if (vault) {
+    const vmsg = h('div', { role: 'status', 'aria-live': 'polite' });
+    const lockBtn = h('button', { class: 'btn sm', type: 'button', onclick: async () => {
+      try {
+        await post('/vault/lock');
+        vmsg.replaceChildren(h('div', { class: 'notice ok' }, 'Locked. Account-based submissions wait until you unlock again.'));
+        lockBtn.remove();
+      } catch (err) {
+        vmsg.replaceChildren(h('div', { class: 'notice bad' }, err.message));
+      }
+    } }, 'Lock now');
+    const state = !vault.exists
+      ? 'No key vault yet. Directory-account credentials are sealed with a passphrase only you hold: run `submitfleet vault init` to create one.'
+      : vault.unlocked
+        ? `Unlocked until ${new Date(vault.expires_at).toLocaleString()}. Submissions that use your directory accounts can run.`
+        : 'Locked: submissions that use your directory accounts wait. Unlock with `submitfleet vault unlock --ttl 8h` (up to 7d). A restart locks it too.';
+    root.append(h('div', { class: 'section-title' }, 'Key vault'),
+      h('div', { class: 'card stack' }, h('p', { class: 'small' }, state),
+        h('p', { class: 'muted small' }, 'SubmitFleet cannot open your account credentials on its own. If you lose the passphrase and the recovery key, reconnect the accounts.'),
+        vault.exists && vault.unlocked ? h('div', { class: 'btn-row' }, lockBtn) : '', vmsg));
+  }
+
   // Profile (@profullstack/profile fields; GET/PATCH /api/v1/me/profile)
   const { profile } = await api('/me/profile');
   const PROFILE = [['first_name', 'First name', 'text', 'given-name'], ['last_name', 'Last name', 'text', 'family-name'], ['company_domain', 'Company domain', 'text', 'organization'], ['job_title', 'Job title', 'text', 'organization-title'], ['linkedin_url', 'LinkedIn', 'url', 'url']];
