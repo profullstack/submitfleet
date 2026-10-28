@@ -6,11 +6,13 @@ import { appendEvent, intentById, recordRemoteRefs, rowToIntent, transition, typ
 import { OCCUPYING_STATES } from './state.js';
 import { newId, nowIso, SubmitFleetError } from './util.js';
 import { markNeedsReauth, readAccountSecret } from './workspaces.js';
+import type { Vaults } from './vault.js';
 
 export interface WorkerOptions {
   db: Db;
   adapters: Map<string, Adapter>;
-  secretKey: Buffer | null;
+  /** Workspace key vaults: account credentials open only while the owner has unlocked. */
+  vaults: Vaults;
   workerId?: string;
   leaseMs?: number;
   execTimeoutMs?: number;
@@ -64,6 +66,12 @@ export class Worker {
    */
   async claim(): Promise<Intent | null> {
     const now = nowIso(this.now);
+    // Work that needs an account waits until its workspace vault is unlocked
+    // (in this process's memory); everything else runs as before.
+    const unlocked = this.opts.vaults.unlockedWorkspaces();
+    const accountOk = unlocked.length
+      ? `(i.account_id IS NULL OR (a.sealed_secret LIKE 'v2.%' AND i.workspace_id IN (${unlocked.map(() => '?').join(', ')})))`
+      : 'i.account_id IS NULL';
     const lease = new Date(this.now() + this.leaseMs).toISOString();
     const rows = await all<Record<string, unknown>>(
       this.db,
@@ -76,6 +84,7 @@ export class Worker {
          LEFT JOIN accounts a ON a.id = i.account_id
          WHERE i.state = 'queued'
            AND (i.account_id IS NULL OR a.status = 'connected')
+           AND ${accountOk}
            AND (d.queue_limit_per_account IS NULL OR (
              SELECT COUNT(*) FROM intents o
              WHERE o.destination_id = i.destination_id AND o.account_id IS i.account_id AND o.state IN (${occupying})
@@ -89,7 +98,7 @@ export class Worker {
          ORDER BY i.created_at LIMIT 1
        )
        RETURNING *`,
-      this.id, lease, now, now, now,
+      this.id, lease, now, ...unlocked, now, now,
     );
     const r = rows[0];
     if (!r) return null;
@@ -245,7 +254,7 @@ export class Worker {
   }
 
   private context(intent: Intent, d: Destination, signal: AbortSignal): ExecContext {
-    const { db, secretKey } = this.opts;
+    const { db, vaults } = this.opts;
     return {
       intentId: intent.id,
       payload: intent.payload,
@@ -254,8 +263,7 @@ export class Worker {
       recordRemote: (refs) => recordRemoteRefs(db, intent.id, intent.fence, refs),
       credentials: async () => {
         if (!intent.account_id) return {};
-        if (!secretKey) throw new SubmitFleetError('secret_key_missing');
-        return readAccountSecret(db, secretKey, intent.workspace_id, intent.account_id);
+        return readAccountSecret(db, vaults, intent.workspace_id, intent.account_id);
       },
       fetch: this.fetchImpl,
       signal,

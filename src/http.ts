@@ -37,6 +37,10 @@ const STATUS: Record<string, number> = {
   campaign_not_replannable: 409,
   unsupported_operation: 409,
   secret_key_missing: 503,
+  vault_missing: 409,
+  vault_exists: 409,
+  vault_locked: 423,
+  vault_key_invalid: 403,
   origin_not_allowed: 403,
   invalid_credentials: 401,
   locked: 429,
@@ -280,6 +284,18 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
     await fleet.accountDisconnect(A(c), c.req.param('id'));
     return c.json({ disconnected: c.req.param('id') });
   });
+
+  // Workspace key vault: the passphrase never comes here, only the sealed record (create) or the derived data key (unlock).
+  api.get('/vault', async (c) => c.json(await fleet.vaultStatus(A(c))));
+  api.post('/vault', async (c) => {
+    const b = await body(c, z.object({ seal: z.record(z.string(), z.unknown()) }));
+    return c.json(await fleet.vaultCreate(A(c), b.seal), 201);
+  });
+  api.post('/vault/unlock', async (c) => {
+    const b = await body(c, z.object({ data_key: z.string().max(100), ttl: z.union([z.string().max(10), z.number()]).optional() }));
+    return c.json(await fleet.vaultUnlock(A(c), b.data_key, b.ttl ?? null));
+  });
+  api.post('/vault/lock', async (c) => c.json(await fleet.vaultLock(A(c))));
 
   api.get('/human-queue', async (c) => c.json(await fleet.humanQueue(A(c))));
   api.get('/submissions/:id', async (c) => c.json(await fleet.submissionGet(A(c), c.req.param('id'))));

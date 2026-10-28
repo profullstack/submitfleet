@@ -17,6 +17,7 @@ import * as products from './products.js';
 import * as reports from './reports.js';
 import { loadSecretKey, newId, nowIso, SubmitFleetError } from './util.js';
 import { Worker } from './worker.js';
+import { LOCKED_MESSAGE, Vaults } from './vault.js';
 import { Rewards, rewardsDbPath } from './rewards.js';
 import { dataDir } from './config.js';
 import * as ws from './workspaces.js';
@@ -58,6 +59,8 @@ export class SubmitFleet {
   private now: () => number;
   /** Customer webhooks; the owner of every endpoint and event is a workspace id. */
   readonly hooks: Webhooks;
+  /** Workspace key vaults: account credentials are sealed to them and open only while unlocked (memory only). */
+  readonly vaults: Vaults;
 
   private constructor(
     readonly db: Db,
@@ -65,6 +68,9 @@ export class SubmitFleet {
   ) {
     this.adapters = config.adapters ?? builtinAdapters();
     this.secretKey = config.secretKey ? loadSecretKey(config.secretKey) : null;
+    // SUBMITFLEET_SECRET_KEY no longer seals account credentials; it only opens
+    // legacy v1 rows during their owner's unlock (one-shot migration).
+    this.vaults = new Vaults(db, this.secretKey);
     this.fetchImpl = config.fetch ?? fetch;
     this.now = config.now ?? Date.now;
     this.hooks = createWebhooks(db, {
@@ -171,7 +177,7 @@ export class SubmitFleet {
   }
 
   worker(opts: { workerId?: string; leaseMs?: number; execTimeoutMs?: number } = {}): Worker {
-    return new Worker({ db: this.db, adapters: this.adapters, secretKey: this.secretKey, fetch: this.fetchImpl, now: this.now, ...opts });
+    return new Worker({ db: this.db, adapters: this.adapters, vaults: this.vaults, fetch: this.fetchImpl, now: this.now, ...opts });
   }
 
   // ── Products ──
@@ -231,18 +237,36 @@ export class SubmitFleet {
   };
   accountConnectFinish = async (a: Actor, destination: string, email: string, code: string, label?: string) => {
     ws.requireOwner(a);
-    if (!this.secretKey) throw new SubmitFleetError('secret_key_missing');
     const d = await this.requireDestination(destination);
     if (d.adapter_id !== 'tinylaunch') throw new SubmitFleetError('unsupported_operation');
+    if (!(await this.vaults.seal(a.workspaceId))) throw new SubmitFleetError('vault_missing', 'create the workspace key vault first (submitfleet vault init)');
     const { secret, expiresAt } = await tinyLaunchVerify(this.fetchImpl, email, code, this.now());
-    return ws.connectAccount(this.db, this.secretKey, a.workspaceId, d.id, label ?? email, secret, expiresAt);
+    return ws.connectAccount(this.db, await this.vaults.sealSecret(a.workspaceId, secret), a.workspaceId, d.id, label ?? email, expiresAt);
   };
   /** For destinations whose account needs no secret (account_requirement 'none') or for tests. */
   accountConnectSecret = async (a: Actor, destination: string, label: string, secret: Record<string, string>, expiresAt: string | null) => {
     ws.requireOwner(a);
-    if (!this.secretKey) throw new SubmitFleetError('secret_key_missing');
     const d = await this.requireDestination(destination);
-    return ws.connectAccount(this.db, this.secretKey, a.workspaceId, d.id, label, secret, expiresAt);
+    return ws.connectAccount(this.db, await this.vaults.sealSecret(a.workspaceId, secret), a.workspaceId, d.id, label, expiresAt);
+  };
+
+  // ── Workspace key vault (unlock-on-use) ──
+  vaultStatus = async (a: Actor) => {
+    const s = await this.vaults.status(a.workspaceId);
+    return { ...s, locked_message: s.unlocked ? null : LOCKED_MESSAGE };
+  };
+  vaultCreate = async (a: Actor, seal: unknown) => {
+    ws.requireOwner(a);
+    await this.vaults.create(a.workspaceId, seal);
+    return { created: true };
+  };
+  vaultUnlock = async (a: Actor, dataKey: string, ttl?: string | number | null) => {
+    ws.requireOwner(a);
+    return this.vaults.unlock(a.workspaceId, dataKey, ttl);
+  };
+  vaultLock = async (a: Actor) => {
+    ws.requireOwner(a);
+    return this.vaults.lock(a.workspaceId);
   };
 
   // ── Campaigns ──

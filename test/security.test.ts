@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { all } from '../src/db.js';
 import { createApiKey, createWorkspace, authenticate } from '../src/workspaces.js';
 import { redact, seal, unseal, loadSecretKey } from '../src/util.js';
-import { approvedProduct, fakeAdapter, harness, launch, qualifyingDestination, SECRET, type Harness } from './helpers.js';
+import { approvedProduct, fakeAdapter, harness, launch, qualifyingDestination, SECRET, vaultUp, type Harness } from './helpers.js';
 
 let h: Harness;
 afterEach(() => h?.cleanup());
@@ -19,6 +19,7 @@ describe('9. secrets and tenant isolation', () => {
     });
     h = await harness([adapter]);
     await h.fleet.catalogUpsert(h.owner, qualifyingDestination(0, { account_requirement: 'login' }));
+    await vaultUp(h.fleet, h.owner);
     await h.fleet.accountConnectSecret(h.owner, 'dest-0', 'main', { access_token: TOKEN, password: 'hunter2' }, null);
     const raw = await all<{ sealed_secret: string }>(h.fleet.db, 'SELECT sealed_secret FROM accounts');
     expect(raw[0]!.sealed_secret).not.toContain('hunter2');

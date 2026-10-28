@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { all, one, run, type Db } from './db.js';
-import { newId, nowIso, seal, sha256, SubmitFleetError, unseal } from './util.js';
+import { newId, nowIso, sha256, SubmitFleetError } from './util.js';
+import type { Vaults } from './vault.js';
 
 export type Role = 'owner' | 'agent';
 
@@ -84,18 +85,17 @@ export interface Account {
 
 const ACCOUNT_COLS = 'id, workspace_id, destination_id, label, status, expires_at, created_at, updated_at';
 
+/** `sealed` is the secret already sealed to the workspace vault (Vaults.sealSecret); nothing here can open it. */
 export async function connectAccount(
   db: Db,
-  key: Buffer,
+  sealed: string,
   workspaceId: string,
   destinationId: string,
   label: string,
-  secret: Record<string, string>,
   expiresAt: string | null,
 ): Promise<Account> {
   const now = nowIso();
   const existing = await one<{ id: string }>(db, 'SELECT id FROM accounts WHERE workspace_id = ? AND destination_id = ? AND label = ?', workspaceId, destinationId, label);
-  const sealed = seal(key, JSON.stringify(secret));
   let id = existing?.id;
   if (id) {
     await run(db, "UPDATE accounts SET sealed_secret = ?, status = 'connected', expires_at = ?, updated_at = ? WHERE id = ?", sealed, expiresAt, now, id);
@@ -138,8 +138,9 @@ export async function markNeedsReauth(db: Db, id: string): Promise<void> {
   await run(db, "UPDATE accounts SET status = 'needs_reauth', updated_at = ? WHERE id = ?", nowIso(), id);
 }
 
-export async function readAccountSecret(db: Db, key: Buffer, workspaceId: string, id: string): Promise<Record<string, string>> {
+/** Opens only while the workspace vault is unlocked (vault_locked otherwise). */
+export async function readAccountSecret(db: Db, vaults: Vaults, workspaceId: string, id: string): Promise<Record<string, string>> {
   const r = await one<{ sealed_secret: string | null; status: string }>(db, 'SELECT sealed_secret, status FROM accounts WHERE id = ? AND workspace_id = ?', id, workspaceId);
   if (!r || !r.sealed_secret || r.status !== 'connected') throw new SubmitFleetError('account_unavailable');
-  return JSON.parse(unseal(key, r.sealed_secret)) as Record<string, string>;
+  return vaults.openSecret(workspaceId, r.sealed_secret);
 }

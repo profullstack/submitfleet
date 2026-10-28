@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createBudget, reserve } from '../src/budgets.js';
 import { all, one, run } from '../src/db.js';
 import { getIntent } from '../src/ledger.js';
-import { approvedProduct, fakeAdapter, harness, launch, qualifyingDestination, seedDestinations, type Harness } from './helpers.js';
+import { approvedProduct, fakeAdapter, harness, launch, qualifyingDestination, seedDestinations, vaultUp, type Harness } from './helpers.js';
 
 let h: Harness;
 afterEach(() => h?.cleanup());
@@ -108,6 +108,7 @@ describe('durable execution', () => {
   it('6. account-wide queue limits apply across campaigns and workers', async () => {
     h = await harness();
     await h.fleet.catalogUpsert(h.owner, qualifyingDestination(0, { account_requirement: 'login', queue_limit_per_account: 1, queue_window_hours: 24 }));
+    await vaultUp(h.fleet, h.owner);
     const acct = await h.fleet.accountConnectSecret(h.owner, 'dest-0', 'main', { token: 't' }, null);
     const a = await approvedProduct(h.fleet, h.owner, 'https://a.example');
     const b = await approvedProduct(h.fleet, h.owner, 'https://b.example');
@@ -147,6 +148,7 @@ describe('durable execution', () => {
     h = await harness([adapter]);
     await h.fleet.catalogUpsert(h.owner, qualifyingDestination(0, { account_requirement: 'login' }));
     await h.fleet.catalogUpsert(h.owner, qualifyingDestination(1));
+    await vaultUp(h.fleet, h.owner);
     const acct = await h.fleet.accountConnectSecret(h.owner, 'dest-0', 'main', { token: 't' }, null);
     const p = await approvedProduct(h.fleet, h.owner);
     await launch(h, p.id, 2);
