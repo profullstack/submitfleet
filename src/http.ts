@@ -13,7 +13,8 @@ import type { SubmitFleet } from './service.js';
 import { SubmitFleetError } from './util.js';
 import { createProfileStore, mountProfileRoutes } from '@profullstack/profile';
 import { getUser } from './auth.js';
-import type { Actor } from './workspaces.js';
+import { requireOwner, type Actor } from './workspaces.js';
+import { webhooksApi } from '@profullstack/webhooks';
 
 type Env = { Variables: { actor: Actor } };
 
@@ -330,6 +331,18 @@ export function buildApp(fleet: SubmitFleet, opts: { allowedOrigins?: string[]; 
     await fleet.apiKeyRevoke(A(c), c.req.param('id'));
     return c.json({ revoked: c.req.param('id') });
   });
+
+  // ── Customer webhooks: the @profullstack/webhooks API, owned by the caller's workspace.
+  // Same key/session auth as every other route; owner keys only (endpoints carry signing secrets).
+  const hookOwner = new WeakMap<Request, string>();
+  const hooksApi = webhooksApi(fleet.hooks, { basePath: '/api/v1/webhooks', owner: (req) => hookOwner.get(req) });
+  const hooksRoute = async (c: Context<Env>) => {
+    requireOwner(A(c));
+    hookOwner.set(c.req.raw, A(c).workspaceId);
+    return (await hooksApi(c.req.raw)) ?? c.json({ error: 'not_found' }, 404);
+  };
+  api.all('/webhooks', hooksRoute);
+  api.all('/webhooks/*', hooksRoute);
 
   app.route('/api/v1', api);
   return app;

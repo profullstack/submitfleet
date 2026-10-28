@@ -98,6 +98,28 @@ command. Exit codes: 0 ok, 1 error, 2 usage, 3 gate not met, 4 jobs waiting for 
 - **Dashboard** at `/app`: coverage, portfolio, campaigns (preview, approve, run, pause, cancel),
   human-action queue, accounts, reports with Copy Markdown and downloads.
 
+## Webhooks
+
+A workspace owner subscribes HTTPS endpoints to SubmitFleet events (`@profullstack/webhooks`):
+Settings > Webhooks, `/api/v1/webhooks` (owner key or session), `submitfleet webhooks ...` or the
+`submitfleet_webhook_*` MCP tools. Each delivery is a CloudEvent (`type`, `source`, `subject`,
+`time`, `data`) POSTed with Standard Webhooks headers (`webhook-id`, `webhook-timestamp`,
+`webhook-signature`), signed with the endpoint's `whsec_` secret (shown once; rotate any time).
+Failed deliveries retry with backoff for about three days; 20 failures in a row switch the endpoint off.
+
+| Event | When |
+| --- | --- |
+| `campaign.started` / `campaign.resumed` | an approved campaign is run / a paused one runs again |
+| `campaign.paused` / `campaign.canceled` | paused / canceled (unsent work dropped) |
+| `campaign.completed` | every submission reached a final state (the campaign moves to `completed`) |
+| `submission.needs_human` | a submission waits for you (CAPTCHA, account, assisted step) |
+| `submission.submitted` | sent to the destination (or marked submitted) |
+| `submission.published` / `submission.rejected` | the listing is live / the destination rejected it |
+| `submission.failed` / `submission.removed` | skipped or failed / a live listing was taken down |
+
+Endpoints and the outbox live in `webhook_endpoints` / `webhook_deliveries` (migration 5), secrets
+sealed with `SUBMITFLEET_SECRET_KEY`. `submitfleet serve` drains the outbox.
+
 ## Credit codes and invites
 
 - **Credit codes** (`@profullstack/redeem-credits`) grant Pro days. Redeem under Settings > Plan

@@ -75,6 +75,23 @@ export async function intentEvents(db: Db, intentId: string) {
   return all(db, 'SELECT at, kind, fence, from_state, to_state, data_json FROM intent_events WHERE intent_id = ? ORDER BY id', intentId);
 }
 
+/** A committed state change of one intent (submission). */
+export interface TransitionEvent {
+  intentId: string;
+  from: IntentState;
+  to: IntentState;
+  reason: string | null;
+}
+export type TransitionListener = (e: TransitionEvent) => void | Promise<void>;
+
+const listeners = new WeakMap<Db, TransitionListener>();
+
+/** Called after every successful transition on this database handle (webhooks). */
+export function onTransition(db: Db, fn: TransitionListener | null): void {
+  if (fn) listeners.set(db, fn);
+  else listeners.delete(db);
+}
+
 export interface TransitionPatch {
   reason_code?: string | null;
   external_action_performed?: boolean;
@@ -124,8 +141,18 @@ export async function transition(
     args.push(fence);
   }
   const n = await run(db, `UPDATE intents SET ${sets.join(', ')} WHERE ${where}`, ...args);
-  if (n === 1) await appendEvent(db, intent.id, 'transition', { from: intent.state, to, fence, reason: patch.reason_code, evidence: patch.evidence });
-  else await appendEvent(db, intent.id, 'stale_transition_rejected', { from: intent.state, to, fence });
+  if (n === 1) {
+    await appendEvent(db, intent.id, 'transition', { from: intent.state, to, fence, reason: patch.reason_code, evidence: patch.evidence });
+    const listener = listeners.get(db);
+    if (listener) {
+      // A listener (webhook emit) must never undo or fail the transition it reports.
+      try {
+        await listener({ intentId: intent.id, from: intent.state, to, reason: patch.reason_code ?? null });
+      } catch (e) {
+        console.error('[submitfleet] transition listener failed', e);
+      }
+    }
+  } else await appendEvent(db, intent.id, 'stale_transition_rejected', { from: intent.state, to, fence });
   return n === 1;
 }
 

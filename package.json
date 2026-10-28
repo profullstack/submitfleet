@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/submitfleet",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "SubmitFleet: launch your product on 339 launch sites and directories from one profile. Prepared submissions, accounts with passkeys, a tracked launch queue, CLI, MCP server and API.",
   "type": "module",
   "license": "MIT",
@@ -55,6 +55,7 @@
     "@profullstack/footer": "^0.4.0",
     "@profullstack/profile": "0.1.6",
     "@profullstack/redeem-credits": "0.2.0",
+    "@profullstack/webhooks": "0.2.1",
     "@profullstack/x402-gateway": "^0.15.2",
     "@simplewebauthn/server": "^14.0.3",
     "hono": "4.13.14",

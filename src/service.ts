@@ -21,6 +21,9 @@ import { Rewards, rewardsDbPath } from './rewards.js';
 import { dataDir } from './config.js';
 import * as ws from './workspaces.js';
 import type { Actor } from './workspaces.js';
+import { WebhookError, type GuardOptions, type Webhooks } from '@profullstack/webhooks';
+import { createWebhooks, SUBMISSION_EVENT, type WebhookEvent } from './webhooks.js';
+import { TERMINAL_STATES } from './state.js';
 
 export interface SubmitFleetConfig {
   dbUrl: string;
@@ -35,6 +38,8 @@ export interface SubmitFleetConfig {
   publicOrigin?: string;
   /** Fetch used for owner-supplied URLs (autofill, logo import); must refuse private addresses. */
   publicFetch?: typeof fetch;
+  /** Customer webhook delivery: fetch and the URL guard (tests, self-hosts on a LAN). */
+  webhooks?: { fetch?: typeof fetch; guard?: GuardOptions };
 }
 
 const LOGO_TYPES: Record<string, { ext: string; magic: (b: Buffer) => boolean }> = {
@@ -51,6 +56,8 @@ export class SubmitFleet {
   readonly secretKey: Buffer | null;
   private fetchImpl: typeof fetch;
   private now: () => number;
+  /** Customer webhooks; the owner of every endpoint and event is a workspace id. */
+  readonly hooks: Webhooks;
 
   private constructor(
     readonly db: Db,
@@ -60,6 +67,69 @@ export class SubmitFleet {
     this.secretKey = config.secretKey ? loadSecretKey(config.secretKey) : null;
     this.fetchImpl = config.fetch ?? fetch;
     this.now = config.now ?? Date.now;
+    this.hooks = createWebhooks(db, {
+      source: (config.publicOrigin ?? 'https://submitfleet.com').replace(/\/+$/, ''),
+      secretKey: this.secretKey,
+      fetch: config.webhooks?.fetch,
+      guard: config.webhooks?.guard,
+      now: config.now,
+    });
+    ledger.onTransition(db, (e) => this.onSubmissionTransition(e));
+  }
+
+  // ── Webhook events ──
+  /** Queues one event for the workspace's endpoints. Never throws: a webhook must not fail the action. */
+  private async emit(workspaceId: string, type: WebhookEvent, data: Record<string, unknown>, subject: string): Promise<void> {
+    try {
+      await this.hooks.emit(workspaceId, type, data, { subject });
+    } catch (e) {
+      console.error(`[submitfleet] webhook emit ${type} failed`, e);
+    }
+  }
+
+  private async onSubmissionTransition(e: ledger.TransitionEvent): Promise<void> {
+    const i = await ledger.intentById(this.db, e.intentId);
+    if (!i) return;
+    const type = SUBMISSION_EVENT[e.to];
+    if (type) {
+      const d = await one<{ slug: string; name: string }>(this.db, 'SELECT slug, name FROM destinations WHERE id = ?', i.destination_id);
+      await this.emit(i.workspace_id, type, {
+        submission_id: i.id,
+        campaign_id: i.campaign_id,
+        product_id: i.product_id,
+        destination: d?.slug ?? i.destination_id,
+        destination_name: d?.name ?? null,
+        mode: i.mode,
+        from: e.from,
+        state: e.to,
+        reason_code: e.reason,
+        listing_url: i.listing_url,
+        submitted_at: i.submitted_at,
+        published_at: i.published_at,
+      }, i.id);
+    }
+    if (TERMINAL_STATES.includes(e.to)) await this.completeIfDone(i.workspace_id, i.campaign_id);
+  }
+
+  /** A running campaign whose every submission reached a final state is completed (once). */
+  private async completeIfDone(workspaceId: string, campaignId: string): Promise<void> {
+    const terminal = TERMINAL_STATES.map((t) => `'${t}'`).join(', ');
+    const n = await run(
+      this.db,
+      `UPDATE campaigns SET status = 'completed', updated_at = ? WHERE id = ? AND workspace_id = ? AND status = 'running'
+         AND NOT EXISTS (SELECT 1 FROM intents WHERE campaign_id = ? AND state NOT IN (${terminal}))`,
+      nowIso(this.now), campaignId, workspaceId, campaignId,
+    );
+    if (n === 1) await this.emitCampaign(workspaceId, campaignId, 'campaign.completed');
+  }
+
+  private async emitCampaign(workspaceId: string, campaignId: string, type: WebhookEvent, extra: Record<string, unknown> = {}): Promise<void> {
+    try {
+      const { campaign: c, intents } = await campaigns.campaignStatus(this.db, workspaceId, campaignId);
+      await this.emit(workspaceId, type, { campaign_id: c.id, product_id: c.product_id, status: c.status, mode: c.mode, submissions: intents, ...extra }, c.id);
+    } catch (e) {
+      console.error(`[submitfleet] webhook emit ${type} failed`, e);
+    }
   }
 
   static async open(config: SubmitFleetConfig): Promise<SubmitFleet> {
@@ -80,6 +150,8 @@ export class SubmitFleet {
   }
 
   close(): void {
+    this.hooks.stop();
+    ledger.onTransition(this.db, null);
     this.rewardsInstance?.close();
     this.db.close();
   }
@@ -179,10 +251,26 @@ export class SubmitFleet {
   campaignPreview = (a: Actor, id: string) => campaigns.previewCampaign(this.db, a.workspaceId, id);
   approvalRequest = (a: Actor, id: string) => campaigns.requestApproval(this.db, a, id);
   approvalGrant = (a: Actor, id: string, scopeHash?: string) => campaigns.grantApproval(this.db, a, id, scopeHash);
-  campaignRun = (a: Actor, id: string) => campaigns.runCampaign(this.db, a, id);
+  campaignRun = async (a: Actor, id: string) => {
+    const before = (await campaigns.getCampaign(this.db, a.workspaceId, id)).status;
+    const r = await campaigns.runCampaign(this.db, a, id);
+    if (before === 'paused') await this.emitCampaign(a.workspaceId, id, 'campaign.resumed');
+    else {
+      await this.emitCampaign(a.workspaceId, id, 'campaign.started', { queued: r.queued, duplicates: r.duplicates });
+      await this.completeIfDone(a.workspaceId, id);
+    }
+    return r;
+  };
   campaignStatus = (a: Actor, id: string) => campaigns.campaignStatus(this.db, a.workspaceId, id);
-  campaignPause = (a: Actor, id: string) => campaigns.pauseCampaign(this.db, a.workspaceId, id);
-  campaignCancel = (a: Actor, id: string) => campaigns.cancelCampaign(this.db, a.workspaceId, id);
+  campaignPause = async (a: Actor, id: string) => {
+    await campaigns.pauseCampaign(this.db, a.workspaceId, id);
+    await this.emitCampaign(a.workspaceId, id, 'campaign.paused');
+  };
+  campaignCancel = async (a: Actor, id: string) => {
+    const r = await campaigns.cancelCampaign(this.db, a.workspaceId, id);
+    await this.emitCampaign(a.workspaceId, id, 'campaign.canceled', r);
+    return r;
+  };
 
   /** Global stop: anyone in the workspace may pause; only the owner may resume. */
   pauseAll = (a: Actor) => ws.setPaused(this.db, a.workspaceId, true);
@@ -356,6 +444,25 @@ export class SubmitFleet {
       return null;
     }
   };
+
+  // ── Customer webhooks (owner only: endpoints carry signing secrets) ──
+  private async hook<T>(a: Actor, fn: (owner: string) => Promise<T>): Promise<T> {
+    ws.requireOwner(a);
+    try {
+      return await fn(a.workspaceId);
+    } catch (e) {
+      if (e instanceof WebhookError) throw new SubmitFleetError(e.status === 404 ? 'not_found' : e.status === 409 ? 'invalid_state' : 'invalid_request', e.message);
+      throw e;
+    }
+  }
+  webhookList = (a: Actor) => this.hook(a, async (o) => ({ endpoints: await this.hooks.listEndpoints(o), event_types: this.hooks.eventTypes }));
+  webhookCreate = (a: Actor, input: { url: string; events?: string[] | string; description?: string }) => this.hook(a, (o) => this.hooks.createEndpoint(o, input));
+  webhookUpdate = (a: Actor, id: string, patch: { url?: string; events?: string[] | string; description?: string; enabled?: boolean }) => this.hook(a, (o) => this.hooks.updateEndpoint(o, id, patch));
+  webhookDelete = (a: Actor, id: string) => this.hook(a, (o) => this.hooks.deleteEndpoint(o, id));
+  webhookRotate = (a: Actor, id: string) => this.hook(a, (o) => this.hooks.rotateSecret(o, id));
+  webhookTest = (a: Actor, id: string) => this.hook(a, (o) => this.hooks.test(o, id));
+  webhookDeliveries = (a: Actor, endpointId?: string, limit = 50) => this.hook(a, (o) => this.hooks.deliveries(o, { endpointId, limit }));
+  webhookRedeliver = (a: Actor, deliveryId: string) => this.hook(a, (o) => this.hooks.redeliver(o, deliveryId));
 
   // ── API keys for agents and scripts ──
   apiKeyList = (a: Actor) => ws.listApiKeys(this.db, a.workspaceId);

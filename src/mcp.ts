@@ -5,7 +5,7 @@ import { SubmitFleetError } from './util.js';
 import { allow } from './auth.js';
 import type { Actor } from './workspaces.js';
 
-export const MCP_SERVER_VERSION = '0.4.0';
+export const MCP_SERVER_VERSION = '0.5.0';
 
 type Json = unknown;
 
@@ -130,6 +130,16 @@ export function buildMcpServer(fleet: SubmitFleet, actor: Actor): McpServer {
 
   s.registerTool('submitfleet_report_get', { description: 'Campaign report: original targets, exclusions, receipts, listing URLs, unresolved jobs, costs. Unknowns stay null.', inputSchema: { campaign_id: z.string() }, annotations: read }, wrap((a) => fleet.reportGet(actor, a.campaign_id)));
   s.registerTool('submitfleet_report_export', { description: 'Export a campaign report as markdown, json or csv.', inputSchema: { campaign_id: z.string(), format: z.enum(['markdown', 'json', 'csv']) }, annotations: read }, wrap((a) => fleet.reportExport(actor, a.campaign_id, a.format)));
+
+  // Customer webhooks (owner only). The signing secret is returned once, by create and rotate.
+  const eventsArg = z.array(z.string().max(100)).max(50).optional().describe('Event patterns, e.g. ["submission.published", "campaign.*"]; omit for every event');
+  s.registerTool('submitfleet_webhook_list', { description: 'Webhook endpoints of this workspace and the event types SubmitFleet emits (campaign.started/paused/resumed/canceled/completed, submission.needs_human/submitted/published/rejected/failed/removed).', inputSchema: {}, annotations: read }, wrap(() => fleet.webhookList(actor)));
+  s.registerTool('submitfleet_webhook_create', { description: 'Subscribe an HTTPS URL to events. Deliveries are signed CloudEvents (Standard Webhooks headers). Returns the signing secret once.', inputSchema: { url: z.string().url().max(2000), events: eventsArg, description: z.string().max(200).optional() }, annotations: { ...write, openWorldHint: true } }, wrap((a) => fleet.webhookCreate(actor, a)));
+  s.registerTool('submitfleet_webhook_update', { description: 'Change an endpoint\'s URL, events or description, or switch it on/off (on clears its failure count).', inputSchema: { id: z.string(), url: z.string().url().max(2000).optional(), events: eventsArg, description: z.string().max(200).optional(), enabled: z.boolean().optional() }, annotations: write }, wrap(({ id, ...patch }) => fleet.webhookUpdate(actor, id, patch)));
+  s.registerTool('submitfleet_webhook_delete', { description: 'Remove a webhook endpoint and its delivery log.', inputSchema: { id: z.string() }, annotations: { ...write, destructiveHint: true } }, wrap((a) => fleet.webhookDelete(actor, a.id)));
+  s.registerTool('submitfleet_webhook_test', { description: 'Send a signed webhook.test event to an endpoint now and report its HTTP status.', inputSchema: { id: z.string() }, annotations: { ...write, openWorldHint: true } }, wrap((a) => fleet.webhookTest(actor, a.id)));
+  s.registerTool('submitfleet_webhook_rotate_secret', { description: 'Issue a new signing secret for an endpoint; the old one stops working at once.', inputSchema: { id: z.string() }, annotations: write }, wrap((a) => fleet.webhookRotate(actor, a.id)));
+  s.registerTool('submitfleet_webhook_deliveries', { description: 'Recent webhook deliveries with status, attempts and payload (all endpoints, or one).', inputSchema: { endpoint_id: z.string().optional(), limit: z.number().int().min(1).max(200).optional() }, annotations: read }, wrap((a) => fleet.webhookDeliveries(actor, a.endpoint_id, a.limit)));
 
   addListCacheFields(s);
   return s;

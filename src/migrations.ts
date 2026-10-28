@@ -1,4 +1,6 @@
 // Forward-only migrations. Never edit an applied migration; add a new one.
+import { schemaSql } from '@profullstack/webhooks';
+
 export const MIGRATIONS: { version: number; sql: string }[] = [
   {
     version: 1,
@@ -409,5 +411,11 @@ CREATE TABLE invite_acceptances (
 );
 CREATE INDEX invite_acceptances_inviter ON invite_acceptances (inviter_id, status, settled_at)
 `,
+  },
+  {
+    // Customer webhooks: @profullstack/webhooks' own endpoint + delivery (outbox) tables.
+    // Owner = the workspace. Read and written by src/webhook-store.ts on this libSQL client.
+    version: 5,
+    sql: schemaSql('sqlite').join(';\n'),
   },
 ];
