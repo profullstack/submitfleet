@@ -36,8 +36,8 @@ importers:
         specifier: 0.2.1
         version: 0.2.1
       '@profullstack/x402-gateway':
-        specifier: ^0.15.3
-        version: 0.15.3
+        specifier: ^0.16.1
+        version: 0.16.1
       '@simplewebauthn/server':
         specifier: ^14.0.3
         version: 14.0.3
@@ -436,8 +436,8 @@ packages:
     resolution: {integrity: sha512-QHeSkpu4O44oJ620qhQqxqFlD3u/OhupmXRnBHw4MGKuDTa0R+Y/727nnF7psSHxxSfnbWfNuVl15z3IXuaZiw==}
     engines: {node: '>=20'}
 
-  '@profullstack/x402-gateway@0.15.3':
-    resolution: {integrity: sha512-YtxaHuiNdnEmwQBkNJXGOEvFUb+5k54GPeZw5RiPKqYcKrA/tRTRVTMbyuX4XSGfmaOEo1BCGpa3w8S46+YQUg==}
+  '@profullstack/x402-gateway@0.16.1':
+    resolution: {integrity: sha512-4aRbH2t5J7vJo9n6SqODNrxD0NBI7GsCo3WjTYuAfIzuPjElHB9TwtpvdpXwOneEJGpQ0JJpHght4M6F39SJng==}
     engines: {node: '>=20.11'}
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
@@ -1688,7 +1688,7 @@ snapshots:
 
   '@profullstack/webhooks@0.2.1': {}
 
-  '@profullstack/x402-gateway@0.15.3':
+  '@profullstack/x402-gateway@0.16.1':
     dependencies:
       '@profullstack/keys': 0.1.0
 
