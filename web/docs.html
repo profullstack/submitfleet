@@ -62,7 +62,11 @@ POST /campaigns/:id/approval-request
 POST /campaigns/:id/approve  {scope_hash}   (owner)
 POST /campaigns/:id/run      GET  /campaigns/:id/queue
 GET  /submissions/:id/kit    POST /submissions/:id/mark {action, listing_url?, note?}
-GET  /reports/:id?format=markdown|json|csv</code></pre>
+GET  /reports/:id?format=markdown|json|csv
+GET  /webhooks                      POST /webhooks {url, events?, description?}   (owner)
+POST /webhooks/:id/test|rotate      PATCH|DELETE /webhooks/:id   GET /webhooks/deliveries</code></pre>
+    <h2>Webhooks</h2>
+    <p>Add an HTTPS endpoint under Settings &gt; Webhooks (or <code>submitfleet webhooks add URL --events campaign.*,submission.published</code>) and SubmitFleet POSTs a signed <a href="https://cloudevents.io">CloudEvent</a> when a campaign starts, pauses, resumes, is canceled or completes, and when a submission needs you, is submitted, goes live, is rejected, fails or is removed. Verify the <code>webhook-signature</code> header with the endpoint's <code>whsec_</code> secret (<a href="https://www.standardwebhooks.com">Standard Webhooks</a>). Failed deliveries are retried for about three days.</p>
 
     <h2>Self-hosting</h2>
     <p>SubmitFleet is MIT-licensed. <code>npm i -g @profullstack/submitfleet</code>, then <code>submitfleet serve</code> runs the app, API, MCP and workers in one process on SQLite (or Turso). Source and issues: <a href="https://github.com/profullstack/submitfleet">github.com/profullstack/submitfleet</a>.</p>

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { Adapter, ExecContext, ExecResult, ReconcileResult } from '../src/adapters/types.js';
 import type { DestinationInput } from '../src/catalog.js';
-import { SubmitFleet } from '../src/service.js';
+import { SubmitFleet, type SubmitFleetConfig } from '../src/service.js';
 import { createApiKey, ensureDefaultWorkspace, type Actor } from '../src/workspaces.js';
 
 export const SECRET = randomBytes(32).toString('base64');
@@ -80,12 +80,12 @@ export interface Harness {
   cleanup: () => void;
 }
 
-export async function harness(adapters: Adapter[] = [fakeAdapter()]): Promise<Harness> {
+export async function harness(adapters: Adapter[] = [fakeAdapter()], extra: Partial<SubmitFleetConfig> = {}): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'submitfleet-test-'));
   writeFileSync(join(dir, 'logo.png'), Buffer.from('89504e470d0a1a0a', 'hex'));
   const dbUrl = `file:${join(dir, 'sf.db')}`;
   const map = new Map(adapters.map((a) => [a.id, a]));
-  const fleet = await SubmitFleet.open({ dbUrl, secretKey: SECRET, assetsDir: dir, adapters: map });
+  const fleet = await SubmitFleet.open({ dbUrl, secretKey: SECRET, assetsDir: dir, adapters: map, ...extra });
   const ws = await ensureDefaultWorkspace(fleet.db);
   const ownerKey = await createApiKey(fleet.db, ws, 'owner', 'test owner');
   const agentKey = await createApiKey(fleet.db, ws, 'agent', 'test agent');

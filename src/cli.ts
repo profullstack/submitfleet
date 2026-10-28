@@ -69,6 +69,12 @@ Plan, codes and invites (signed in)
   redeem CODE                            redeem a credit code for Pro days
   invites [list] | invites create [--note TEXT] | invites accept CODE
 
+Webhooks (owner; signed CloudEvents to your HTTPS endpoints)
+  webhooks [list]                        endpoints and the event types SubmitFleet emits
+  webhooks add URL [--events campaign.*,submission.published] [--description D]   prints the signing secret once
+  webhooks test ID | rotate ID | remove ID | enable ID | disable ID
+  webhooks deliveries [ID]               recent deliveries (all endpoints, or one)
+
 Credit codes (admin, local database)
   credits mint --days N [--max 1] [--expires-days D] [--label L]   prints the code once
   credits list | credits revoke ID
@@ -168,6 +174,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       max: { type: 'string' },
       'expires-days': { type: 'string' },
       note: { type: 'string' },
+      events: { type: 'string' },
     },
   });
   const [cmd, sub, arg] = pos;
@@ -219,6 +226,19 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   const num = (v: unknown, d?: number) => (v === undefined ? d : Number(v));
   try {
     switch (cmd) {
+      case 'webhooks':
+      case 'webhook': {
+        const r = await webhookCommand(sub, arg, o, {
+          list: () => fleet.webhookList(owner),
+          add: (b) => fleet.webhookCreate(owner, b),
+          test: (id) => fleet.webhookTest(owner, id),
+          rotate: (id) => fleet.webhookRotate(owner, id),
+          remove: (id) => fleet.webhookDelete(owner, id),
+          enable: (id, enabled) => fleet.webhookUpdate(owner, id, { enabled }),
+          deliveries: (id) => fleet.webhookDeliveries(owner, id),
+        });
+        return r === null ? usage() : r;
+      }
       case 'credits': {
         if (sub === 'mint') {
           if (!o.days) return usage('--days is required');
@@ -414,6 +434,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         if (!process.env.RESEND_API_KEY) log('RESEND_API_KEY is not set: sign-in emails are printed here instead of sent');
         serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? '127.0.0.1' });
         log(`submitfleet listening on http://${process.env.HOST ?? '127.0.0.1'}:${port}`);
+        // Customer webhooks: drain the outbox in the background (once per server, never per request).
+        fleet.hooks.start();
         if (!o['no-worker']) await loop(fleet.worker(), Number(process.env.SUBMITFLEET_WORKER_INTERVAL_MS ?? 5000));
         else await new Promise(() => {});
         return EXIT.ok;
@@ -556,6 +578,17 @@ async function runRemote(cmd: string, sub: string | undefined, arg: string | und
       case 'report':
         if (sub === 'export' && arg) return show(await remote('GET', `/reports/${arg}?format=${String(o.format ?? 'markdown')}`));
         return null;
+      case 'webhooks':
+      case 'webhook':
+        return webhookCommand(sub, arg, o, {
+          list: () => remote('GET', '/webhooks'),
+          add: (b) => remote('POST', '/webhooks', b),
+          test: (id) => remote('POST', `/webhooks/${encodeURIComponent(id)}/test`),
+          rotate: (id) => remote('POST', `/webhooks/${encodeURIComponent(id)}/rotate`),
+          remove: (id) => remote('DELETE', `/webhooks/${encodeURIComponent(id)}`),
+          enable: (id, enabled) => remote('PATCH', `/webhooks/${encodeURIComponent(id)}`, { enabled }),
+          deliveries: (id) => remote('GET', id ? `/webhooks/${encodeURIComponent(id)}/deliveries` : '/webhooks/deliveries'),
+        });
       case 'mcp':
         await mcpStdioProxy();
         return EXIT.ok;
@@ -566,4 +599,35 @@ async function runRemote(cmd: string, sub: string | undefined, arg: string | und
     out({ error: e instanceof SubmitFleetError ? e.code : 'error', message: e instanceof Error ? e.message : String(e), detail: e instanceof SubmitFleetError ? (e.detail ?? null) : null });
     return EXIT.error;
   }
+}
+
+interface WebhookOps {
+  list: () => Promise<unknown>;
+  add: (b: { url: string; events?: string[]; description?: string }) => Promise<unknown>;
+  test: (id: string) => Promise<unknown>;
+  rotate: (id: string) => Promise<unknown>;
+  remove: (id: string) => Promise<unknown>;
+  enable: (id: string, enabled: boolean) => Promise<unknown>;
+  deliveries: (id?: string) => Promise<unknown>;
+}
+
+/** `webhooks ...` against the hosted API or the local database. null = usage error. */
+async function webhookCommand(sub: string | undefined, arg: string | undefined, o: Record<string, unknown>, ops: WebhookOps): Promise<number | null> {
+  if (!sub || sub === 'list') return out(await ops.list()), EXIT.ok;
+  if (sub === 'deliveries') return out(await ops.deliveries(arg)), EXIT.ok;
+  if (!arg) return null;
+  if (sub === 'add' || sub === 'create') {
+    const events = o.events ? String(o.events).split(/[,\s]+/).filter(Boolean) : undefined;
+    const r = await ops.add({ url: arg, events, description: (o.description as string) ?? undefined });
+    log('Store the signing secret now: verify each delivery with it (Standard Webhooks). Rotate it any time.');
+    return out(r), EXIT.ok;
+  }
+  if (sub === 'test') return out(await ops.test(arg)), EXIT.ok;
+  if (sub === 'rotate') {
+    log('The old secret stops working now.');
+    return out(await ops.rotate(arg)), EXIT.ok;
+  }
+  if (sub === 'remove' || sub === 'delete') return out(await ops.remove(arg)), EXIT.ok;
+  if (sub === 'enable' || sub === 'disable') return out(await ops.enable(arg, sub === 'enable')), EXIT.ok;
+  return null;
 }

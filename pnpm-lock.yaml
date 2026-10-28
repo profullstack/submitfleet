@@ -29,6 +29,9 @@ importers:
       '@profullstack/redeem-credits':
         specifier: 0.2.0
         version: 0.2.0
+      '@profullstack/webhooks':
+        specifier: 0.2.1
+        version: 0.2.1
       '@profullstack/x402-gateway':
         specifier: ^0.15.2
         version: 0.15.2
@@ -421,6 +424,10 @@ packages:
     peerDependenciesMeta:
       react:
         optional: true
+
+  '@profullstack/webhooks@0.2.1':
+    resolution: {integrity: sha512-QHeSkpu4O44oJ620qhQqxqFlD3u/OhupmXRnBHw4MGKuDTa0R+Y/727nnF7psSHxxSfnbWfNuVl15z3IXuaZiw==}
+    engines: {node: '>=20'}
 
   '@profullstack/x402-gateway@0.15.2':
     resolution: {integrity: sha512-f0el7rPd13StA04OxA0PGrrG0kxg/vvGPtvI0XYn8wlTGPut3G+2UKcMRzSxQdaF4LkYAOLnkg9S+LhmIKvDBA==}
@@ -1669,6 +1676,8 @@ snapshots:
   '@profullstack/redeem-credits@0.2.0': {}
 
   '@profullstack/referrals@0.1.0': {}
+
+  '@profullstack/webhooks@0.2.1': {}
 
   '@profullstack/x402-gateway@0.15.2':
     dependencies:

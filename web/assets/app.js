@@ -695,6 +695,9 @@ async function settingsPage() {
       label.value = '';
     } }, 'Create key')));
 
+  // Webhooks (owner only; /api/v1/webhooks from @profullstack/webhooks)
+  if (me.role === 'owner') root.append(h('div', { class: 'section-title', id: 'webhooks' }, 'Webhooks'), await webhooksCard());
+
   // CLI + MCP
   const origin = location.origin;
   root.append(h('div', { class: 'section-title' }, 'CLI and MCP'),
@@ -706,6 +709,73 @@ async function settingsPage() {
 
   root.append(h('div', { class: 'section-title' }, 'Session'), h('button', { class: 'btn', type: 'button', onclick: signOut }, 'Sign out'));
   return root;
+}
+
+// ── Webhooks ──
+async function webhooksCard() {
+  const { endpoints, event_types } = await api('/webhooks');
+  const shown = h('div');
+  const showSecret = (title, secret) => shown.replaceChildren(h('div', { class: 'notice ok' }, h('b', {}, title), h('div', { class: 'token' }, secret),
+    h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', type: 'button', onclick: () => copy(secret, 'Secret copied') }, 'Copy secret'))));
+  const act = (fn) => async () => {
+    try {
+      await fn();
+    } catch (e) {
+      toast(e.message);
+    }
+  };
+  const rows = endpoints.length ? endpoints.map((e) => h('div', { class: 'item' },
+    h('span', { class: `pill ${e.enabled ? 'green' : 'red'}`, title: e.disabled_reason || '' }, e.enabled ? 'On' : 'Off'),
+    h('div', {}, h('div', { class: 'title' }, e.url),
+      h('div', { class: 'sub' }, h('span', {}, e.events.includes('*') ? 'every event' : e.events.join(', ')), e.description ? h('span', {}, `· ${e.description}`) : null,
+        e.failures ? h('span', {}, `· ${e.failures} failed in a row`) : null, e.disabled_reason ? h('span', {}, `· ${e.disabled_reason}`) : null)),
+    h('div', { class: 'btn-row' },
+      h('button', { class: 'btn sm', type: 'button', onclick: act(async () => {
+        const r = await post(`/webhooks/${e.id}/test`);
+        toast(r.ok ? `Test delivered (HTTP ${r.status})` : `Test failed: ${r.error || `HTTP ${r.status}`}`);
+      }) }, 'Send test'),
+      h('button', { class: 'btn sm', type: 'button', onclick: act(async () => {
+        await api(`/webhooks/${e.id}`, { method: 'PATCH', body: JSON.stringify({ enabled: !e.enabled }) });
+        render();
+      }) }, e.enabled ? 'Turn off' : 'Turn on'),
+      h('button', { class: 'btn sm', type: 'button', onclick: act(async () => {
+        if (!confirm('Rotate the signing secret? The old one stops working now.')) return;
+        const r = await post(`/webhooks/${e.id}/rotate`);
+        showSecret('New signing secret. Copy it now: it is not shown again here.', r.secret);
+      }) }, 'Rotate secret'),
+      h('button', { class: 'btn sm danger', type: 'button', onclick: act(async () => {
+        if (!confirm('Remove this webhook endpoint?')) return;
+        await api(`/webhooks/${e.id}`, { method: 'DELETE' });
+        render();
+      }) }, 'Remove')))) : [h('div', { class: 'item' }, h('span'), h('div', { class: 'muted' }, 'No webhooks yet.'), h('span'))];
+
+  const url = h('input', { type: 'url', placeholder: 'https://example.com/hooks/submitfleet', maxlength: 2000, required: true });
+  const desc = h('input', { type: 'text', placeholder: 'Description (optional)', maxlength: 200 });
+  const boxes = event_types.map((t) => h('input', { type: 'checkbox', value: t }));
+  const form = h('form', { class: 'stack' },
+    h('div', { class: 'field' }, h('label', {}, 'Endpoint URL (HTTPS)'), url),
+    h('div', { class: 'field' }, h('label', {}, 'Events'), h('div', { class: 'hint' }, 'None checked = every event.'),
+      h('div', { class: 'filters' }, boxes.map((cb) => h('label', { class: 'chip' }, cb, cb.value)))),
+    h('div', { class: 'btn-row' }, desc, h('button', { class: 'btn primary', type: 'submit' }, 'Add webhook')));
+  const add = act(async () => {
+    const events = boxes.filter((b) => b.checked).map((b) => b.value);
+    const r = await post('/webhooks', { url: url.value.trim(), events: events.length ? events : ['*'], description: desc.value.trim() });
+    url.value = '';
+    desc.value = '';
+    boxes.forEach((b) => (b.checked = false));
+    await render();
+    const target = $('#webhooks');
+    target?.after(h('div', { class: 'notice ok' }, h('b', {}, 'Signing secret for your new endpoint. Copy it now: it is not shown again here.'), h('div', { class: 'token' }, r.secret),
+      h('div', { class: 'btn-row' }, h('button', { class: 'btn sm', type: 'button', onclick: () => copy(r.secret, 'Secret copied') }, 'Copy secret'))));
+    target?.scrollIntoView({ block: 'start' });
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    add();
+  });
+  return h('div', {},
+    h('p', { class: 'muted' }, 'Get a signed POST when a campaign starts, pauses or completes, or a submission is submitted, goes live or is rejected. Payloads are CloudEvents; verify the webhook-signature header (Standard Webhooks) with the endpoint\'s secret.'),
+    shown, h('div', { class: 'list' }, rows), h('div', { class: 'card' }, form));
 }
 
 // ── Plan and credit codes ──
