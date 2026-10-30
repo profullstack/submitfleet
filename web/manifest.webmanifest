@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "SubmitFleet",
+  "short_name": "SubmitFleet",
+  "description": "Launch your product on hundreds of launch sites and directories from one profile.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#133b5a",
+  "theme_color": "#133b5a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
