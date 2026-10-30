@@ -259,6 +259,22 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     if (!f) return c.notFound();
     return c.body(new Uint8Array(f.body), 200, { 'content-type': f.type, 'cache-control': 'public, max-age=300' });
   });
+  for (const [route, filename, contentType] of [
+    ['/manifest.webmanifest', 'manifest.webmanifest', 'application/manifest+json; charset=utf-8'],
+    ['/icon-192.png', 'icon-192.png', 'image/png'],
+    ['/icon-512.png', 'icon-512.png', 'image/png'],
+    ['/sw.js', 'sw.js', 'text/javascript; charset=utf-8'],
+    ['/pwa-register.js', 'pwa-register.js', 'text/javascript; charset=utf-8'],
+  ] as const) {
+    app.get(route, (c) => {
+      const f = files.get(filename);
+      if (!f) return c.notFound();
+      return c.body(new Uint8Array(f.body), 200, {
+        'content-type': contentType,
+        'cache-control': filename === 'sw.js' ? 'no-cache' : 'public, max-age=86400',
+      });
+    });
+  }
   app.get('/favicon.ico', (c) => c.body(new Uint8Array(files.get('assets/icon.svg')!.body), 200, { 'content-type': 'image/svg+xml' }));
   app.get('/d/:slug/icon', async (c) => {
     const i = await fleet.destinationIcon(c.req.param('slug'));
