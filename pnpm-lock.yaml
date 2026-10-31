@@ -21,8 +21,8 @@ importers:
         specifier: 0.3.0
         version: 0.3.0
       '@profullstack/footer':
-        specifier: ^0.4.0
-        version: 0.4.0
+        specifier: latest
+        version: 0.6.11
       '@profullstack/profile':
         specifier: 0.1.6
         version: 0.1.6(@libsql/client@0.18.0)
@@ -384,8 +384,8 @@ packages:
     engines: {node: '>=22.13'}
     hasBin: true
 
-  '@profullstack/footer@0.4.0':
-    resolution: {integrity: sha512-EJZnMUQmWDi9Gzx6BAjogloeaPFFSSCHtHJuC9dsXiOz8M87hfn6Z+Zx9AMYWk8s6xemPrPlkXKGB3PZugkcEA==}
+  '@profullstack/footer@0.6.11':
+    resolution: {integrity: sha512-9khfQbBM2p5cqMqUg8+K1atF2muYWA0AQaVI6C8gH6Cl+D+7Wc2zeaPmtDMque8HZzA3tdaqoCAAUfsufaL17Q==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -1672,7 +1672,7 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@profullstack/footer@0.4.0': {}
+  '@profullstack/footer@0.6.11': {}
 
   '@profullstack/keys@0.1.0': {}
 
