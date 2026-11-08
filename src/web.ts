@@ -55,7 +55,7 @@ export function newNonce(): string {
 
 export interface WebOptions {
   mailer: Mailer;
-  /** Canonical public origin, e.g. https://submitfleet.com. Falls back to the request's forwarded origin. */
+  /** Canonical public origin, e.g. https://submitfleet.pwa.pit.world. Falls back to the request's forwarded origin. */
   publicOrigin?: string;
 }
 
@@ -105,7 +105,7 @@ function loadStatic(): Map<string, { body: Buffer; type: string }> {
   return files;
 }
 
-export const SITE_URL = 'https://submitfleet.com/';
+export const SITE_URL = 'https://submitfleet.pwa.pit.world/';
 
 /**
  * The shared Profullstack footer (links, copyright, << Profullstack >> webring),

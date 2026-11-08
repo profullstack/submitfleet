@@ -35,7 +35,7 @@
     <p>Either way, nothing is submitted until you approve the exact list, listing fees are always $0 (paid routes are excluded), and a product is never submitted twice to the same place.</p>
 
     <h2>CLI</h2>
-    <pre><code>curl -fsSL https://submitfleet.com/install.sh | sh
+    <pre><code>curl -fsSL https://submitfleet.pwa.pit.world/install.sh | sh
 submitfleet login                    # opens your browser, signs the CLI in (OAuth 2.1 + PKCE)
 submitfleet whoami
 submitfleet products list
@@ -47,12 +47,12 @@ submitfleet mcp --stdio              # MCP over stdio, signed in as you</code></
 
     <h2>MCP</h2>
     <p>Create an <b>agent</b> key in Settings, then add the server to your client:</p>
-    <pre><code>claude mcp add --transport http submitfleet https://submitfleet.com/mcp \
+    <pre><code>claude mcp add --transport http submitfleet https://submitfleet.pwa.pit.world/mcp \
   --header "Authorization: Bearer sf_agt_..."</code></pre>
     <p>Tools are prefixed <code>submitfleet_</code>: products, catalog search, campaign plan, preview, status, reports, the human-action queue and more. An agent can plan a campaign and request approval. There is no tool that grants approval: you approve in the app.</p>
 
     <h2>HTTP API</h2>
-    <p>Base URL <code>https://submitfleet.com/api/v1</code>, bearer API key in the <code>Authorization</code> header. JSON in and out; errors carry an <code>error</code> code and a <code>message</code>.</p>
+    <p>Base URL <code>https://submitfleet.pwa.pit.world/api/v1</code>, bearer API key in the <code>Authorization</code> header. JSON in and out; errors carry an <code>error</code> code and a <code>message</code>.</p>
     <pre><code>GET  /products                      POST /products
 POST /products/extract   {url}      PUT  /products/:id/logo  (image body)
 POST /products/:id/approve-facts    (owner)

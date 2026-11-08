@@ -9,7 +9,7 @@ listings. The same core serves a CLI, a TUI, an HTTP API, an MCP server and a mo
 
 ## Status
 
-Live at https://submitfleet.com.
+Live at https://submitfleet.pwa.pit.world.
 
 - **Accounts:** sign up with a passkey, email + password, or an emailed link. Each account gets its own
   workspace. `submitfleet login` signs the CLI in through the browser (OAuth 2.1 + PKCE).

@@ -17,7 +17,7 @@ export function createCrawlGate(env: Record<string, string | undefined> = proces
   if (!apiKey || !payTo) return null;
   const session = new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=`);
   return createGateway({
-    siteUrl: (env.SUBMITFLEET_PUBLIC_ORIGIN || 'https://submitfleet.com').replace(/\/+$/, ''),
+    siteUrl: (env.SUBMITFLEET_PUBLIC_ORIGIN || 'https://submitfleet.pwa.pit.world').replace(/\/+$/, ''),
     siteName: 'SubmitFleet',
     coinpay: { apiKey },
     payTo,
