@@ -1,7 +1,7 @@
 #!/bin/sh
 # submitfleet installer.
 #
-#   curl -fsSL https://submitfleet.com/install.sh | sh
+#   curl -fsSL https://submitfleet.pwa.pit.world/install.sh | sh
 #
 # Installs @profullstack/submitfleet (commands: submitfleet) under your home directory. No root, no system
 # package manager, no system files touched. If this machine has no Node 24+,
@@ -22,7 +22,7 @@ main() {
   set -eu
   PKG="@profullstack/submitfleet"
   TOOL="submitfleet"
-  URL="https://submitfleet.com/install.sh"
+  URL="https://submitfleet.pwa.pit.world/install.sh"
   NODE_MAJOR="24"
   PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
   VERSION=""

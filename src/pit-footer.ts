@@ -4,7 +4,7 @@
  * page. Refetched at most hourly with a 3-second timeout; on failure the last
  * good copy stays, or nothing renders, so pit.world being down never breaks a page.
  */
-const PIT_FOOTER_URL = 'https://pit.world/snippets/footer.html?site=submitfleet.com';
+const PIT_FOOTER_URL = 'https://pit.world/snippets/footer.html?site=submitfleet.pwa.pit.world';
 const TTL_MS = 60 * 60 * 1000;
 
 let cached = '';

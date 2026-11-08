@@ -79,7 +79,7 @@ describe('webring footer', () => {
   it('server-renders the Profullstack ring footer on the landing and docs pages, with its CSS from a route', async () => {
     for (const p of ['/', '/docs']) {
       const html = await (await req('GET', p)).text();
-      expect(html, p).toContain('https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fsubmitfleet.com%2F');
+      expect(html, p).toContain('https://rssamplifier.com/ring/profullstack/next?from=https%3A%2F%2Fsubmitfleet.pwa.pit.world%2F');
       expect(html, p).toContain('/assets/pfs-footer.css');
       expect(html.match(/&copy;|©/g)?.length, p).toBe(1);
       // No ad pressed against the footer.
@@ -307,7 +307,7 @@ describe('assisted flow over HTTP', () => {
 describe('fact extraction', () => {
   it('splits "Name: tagline" titles, prefers the domain name, and skips slogans as names', async () => {
     const { parseFacts } = await import('../src/extract.js');
-    const a = parseFacts('<title>typeheard: drop a recording, get the transcript</title>', 'https://typeheard.com/');
+    const a = parseFacts('<title>typeheard: drop a recording, get the transcript</title>', 'https://typeheard.pwa.pit.world/');
     expect(a).toMatchObject({ name: 'typeheard', tagline: 'drop a recording, get the transcript' });
     const b = parseFacts('<meta property="og:site_name" content="Know before it drops"><title>Know before it drops</title><meta name="description" content="Follow a genre or a name and get told before it drops. Free.">', 'https://genrewatch.com/');
     expect(b.name).toBe('genrewatch');

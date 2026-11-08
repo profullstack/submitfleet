@@ -64,9 +64,9 @@ describe('HTTP API', () => {
     const { call, owner } = await setup();
     expect((await call(owner, 'GET', '/api/v1/products', undefined, { origin: 'https://evil.example' })).status).toBe(403);
     // Behind nginx: the app sees http://127.0.0.1 but the browser's https origin matches the forwarded host.
-    const proxied = await call(owner, 'POST', '/api/v1/pause', undefined, { origin: 'https://submitfleet.com', 'x-forwarded-host': 'submitfleet.com' });
+    const proxied = await call(owner, 'POST', '/api/v1/pause', undefined, { origin: 'https://submitfleet.pwa.pit.world', 'x-forwarded-host': 'submitfleet.pwa.pit.world' });
     expect(proxied.status).toBe(200);
-    expect((await call(owner, 'POST', '/api/v1/pause', undefined, { origin: 'https://evil.example', 'x-forwarded-host': 'submitfleet.com' })).status).toBe(403);
+    expect((await call(owner, 'POST', '/api/v1/pause', undefined, { origin: 'https://evil.example', 'x-forwarded-host': 'submitfleet.pwa.pit.world' })).status).toBe(403);
     const bad = await call(owner, 'POST', '/api/v1/products', { url: 'javascript:alert(1)' });
     expect(bad.status).toBe(400);
   });

@@ -74,7 +74,7 @@ export class SubmitFleet {
     this.fetchImpl = config.fetch ?? fetch;
     this.now = config.now ?? Date.now;
     this.hooks = createWebhooks(db, {
-      source: (config.publicOrigin ?? 'https://submitfleet.com').replace(/\/+$/, ''),
+      source: (config.publicOrigin ?? 'https://submitfleet.pwa.pit.world').replace(/\/+$/, ''),
       secretKey: this.secretKey,
       fetch: config.webhooks?.fetch,
       guard: config.webhooks?.guard,

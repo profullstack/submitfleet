@@ -20,7 +20,7 @@ const EVID = join(DIR, 'evidence');
 mkdirSync(EVID, { recursive: true });
 const SF_KEY = readFileSync(join(CFG, 'submitfleet.key'), 'utf8').trim();
 const ANTHROPIC = readFileSync(join(CFG, 'anthropic.key'), 'utf8').trim();
-const BASE = 'https://submitfleet.com/api/v1';
+const BASE = 'https://submitfleet.pwa.pit.world/api/v1';
 const STATE = join(DIR, `state-${o.campaign}.json`);
 const REPORT = join(DIR, `report-${o.campaign}.jsonl`);
 const state = existsSync(STATE) ? JSON.parse(readFileSync(STATE, 'utf8')) : { attempted: {}, spent: 0 };

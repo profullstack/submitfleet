@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { SubmitFleetError } from './util.js';
 
 export const CLIENT_ID = 'submitfleet-cli';
-export const DEFAULT_URL = 'https://submitfleet.com';
+export const DEFAULT_URL = 'https://submitfleet.pwa.pit.world';
 
 export interface StoredAuth {
   url: string;

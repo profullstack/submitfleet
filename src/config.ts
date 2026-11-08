@@ -37,4 +37,4 @@ export function loadConfig(opts: { createSecret?: boolean } = {}): SubmitFleetCo
   };
 }
 
-export const PUBLIC_ORIGIN = process.env.SUBMITFLEET_PUBLIC_ORIGIN ?? 'https://submitfleet.com';
+export const PUBLIC_ORIGIN = process.env.SUBMITFLEET_PUBLIC_ORIGIN ?? 'https://submitfleet.pwa.pit.world';

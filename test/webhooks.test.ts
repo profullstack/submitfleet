@@ -31,7 +31,7 @@ const publicDns = { lookup: async () => ['93.184.216.34'] };
 
 async function setup(status = 200) {
   const r = receiver(status);
-  h = await harness([fakeAdapter()], { webhooks: { fetch: r.fetchImpl, guard: publicDns }, publicOrigin: 'https://submitfleet.com' });
+  h = await harness([fakeAdapter()], { webhooks: { fetch: r.fetchImpl, guard: publicDns }, publicOrigin: 'https://submitfleet.pwa.pit.world' });
   return r;
 }
 
@@ -88,7 +88,7 @@ describe('webhooks: events', () => {
     expect(types(r.got.filter((g) => g.url.endsWith('/live-only')))).toEqual(['submission.published', 'submission.published']);
 
     const started = toAll.find((g) => g.event.type === 'campaign.started')!;
-    expect(started.event).toMatchObject({ specversion: '1.0', source: 'https://submitfleet.com', subject: plan.campaign.id, data: { campaign_id: plan.campaign.id, product_id: p.id, status: 'running', queued: 2 } });
+    expect(started.event).toMatchObject({ specversion: '1.0', source: 'https://submitfleet.pwa.pit.world', subject: plan.campaign.id, data: { campaign_id: plan.campaign.id, product_id: p.id, status: 'running', queued: 2 } });
     const live = toAll.find((g) => g.event.type === 'submission.published')!;
     expect(live.event.data).toMatchObject({ campaign_id: plan.campaign.id, from: 'submitted', state: 'published_verified', listing_url: 'https://dest.example/acme', reason_code: 'owner_confirmed_live' });
     expect(live.event.data.destination).toMatch(/^dest-\d$/);
