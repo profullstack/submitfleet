@@ -41,7 +41,7 @@ const TYPES: Record<string, string> = {
 // pit.world: the footer's newsletter form POSTs to pit.world/api/subscribe (connect-src),
 // falling back to a plain form POST to pit.world/subscribe without script (form-action).
 export const PAGE_CSP =
-  "default-src 'self'; script-src 'self' https://crawlproof.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://crawlproof.com https://pit.world; font-src 'self'; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://pit.world http://127.0.0.1:* http://localhost:*";
+  "default-src 'self'; script-src 'self' https://crawlproof.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://crawlproof.com https://pit.world; font-src 'self'; frame-src https://crawlproof.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self' https://pit.world http://127.0.0.1:* http://localhost:*";
 
 /** PAGE_CSP plus a per-response nonce in script-src, for the footer's inline subscribe script. */
 export function pageCsp(nonce?: string): string {
