@@ -22,7 +22,7 @@ importers:
         version: 0.3.0
       '@profullstack/footer':
         specifier: latest
-        version: 0.6.11
+        version: 0.6.19
       '@profullstack/profile':
         specifier: 0.1.6
         version: 0.1.6(@libsql/client@0.18.0)
@@ -36,8 +36,8 @@ importers:
         specifier: 0.2.1
         version: 0.2.1
       '@profullstack/x402-gateway':
-        specifier: ^0.16.1
-        version: 0.16.1
+        specifier: ^0.18.0
+        version: 0.18.0
       '@simplewebauthn/server':
         specifier: ^14.0.3
         version: 14.0.3
@@ -384,8 +384,8 @@ packages:
     engines: {node: '>=22.13'}
     hasBin: true
 
-  '@profullstack/footer@0.6.11':
-    resolution: {integrity: sha512-9khfQbBM2p5cqMqUg8+K1atF2muYWA0AQaVI6C8gH6Cl+D+7Wc2zeaPmtDMque8HZzA3tdaqoCAAUfsufaL17Q==}
+  '@profullstack/footer@0.6.19':
+    resolution: {integrity: sha512-DAS2jHDJFnH1w6lDtYbEnvuV2n4NY2vrRwnUKeQPC+Nwfg1f2Me9ClZ6KlXs6Dv0pgJSg2ATLSX0hV+Mq7co3w==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -436,8 +436,8 @@ packages:
     resolution: {integrity: sha512-QHeSkpu4O44oJ620qhQqxqFlD3u/OhupmXRnBHw4MGKuDTa0R+Y/727nnF7psSHxxSfnbWfNuVl15z3IXuaZiw==}
     engines: {node: '>=20'}
 
-  '@profullstack/x402-gateway@0.16.1':
-    resolution: {integrity: sha512-4aRbH2t5J7vJo9n6SqODNrxD0NBI7GsCo3WjTYuAfIzuPjElHB9TwtpvdpXwOneEJGpQ0JJpHght4M6F39SJng==}
+  '@profullstack/x402-gateway@0.18.0':
+    resolution: {integrity: sha512-+vORJd17QpLycouk0wrmyOlnyv+6Q9Ttxk+iglsMH2pZpejTUD2Ak3ysKxQsb94R4m1GLSEv8DHoCS49Nf4/0A==}
     engines: {node: '>=20.11'}
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
@@ -1672,7 +1672,7 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@profullstack/footer@0.6.11': {}
+  '@profullstack/footer@0.6.19': {}
 
   '@profullstack/keys@0.1.0': {}
 
@@ -1688,7 +1688,7 @@ snapshots:
 
   '@profullstack/webhooks@0.2.1': {}
 
-  '@profullstack/x402-gateway@0.16.1':
+  '@profullstack/x402-gateway@0.18.0':
     dependencies:
       '@profullstack/keys': 0.1.0
 
