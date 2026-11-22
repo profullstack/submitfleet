@@ -47,6 +47,21 @@ async function req(method: string, path: string, body?: unknown, opts: { origin?
 const tokenFrom = (m: Mail) => /#t=([\w-]+)/.exec(m.text)![1]!;
 
 describe('pages', () => {
+  it('serves sitemap.xml and a robots.txt that points at it, on the public origin', async () => {
+    const sm = await req('GET', '/sitemap.xml');
+    expect(sm.status).toBe(200);
+    expect(sm.headers.get('content-type')).toContain('application/xml');
+    const xml = await sm.text();
+    expect(xml).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
+    expect(xml).toContain(`<loc>${ORIGIN}/</loc>`);
+    expect(xml).toContain(`<loc>${ORIGIN}/docs</loc>`);
+    expect(xml).not.toContain('/app');
+    const robots = await req('GET', '/robots.txt');
+    expect(robots.status).toBe(200);
+    expect(robots.headers.get('content-type')).toContain('text/plain');
+    expect(await robots.text()).toContain(`Sitemap: ${ORIGIN}/sitemap.xml`);
+  });
+
   it('landing shows the live catalog counts and strict CSP', async () => {
     const res = await req('GET', '/');
     expect(res.status).toBe(200);
