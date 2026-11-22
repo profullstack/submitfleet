@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createCrawlGate } from '../src/crawl-gate.js';
 import { buildApp } from '../src/http.js';
 import { harness, type Harness } from './helpers.js';
+import { SESSION_COOKIE } from '../src/auth.js';
 
 process.env.PROFULLSTACK_FOOTER_OFFLINE ??= '1';
 
@@ -42,5 +43,12 @@ describe('crawl gateway', () => {
     expect((await a.request('/', { headers: CHROME })).status).not.toBe(402);
     expect((await a.request('/healthz', { headers: { 'user-agent': GPT } })).status).toBe(200);
     expect((await a.request('/api/v1/products', { headers: { 'user-agent': GPT } })).status).toBe(401);
+  });
+});
+
+describe('a forged session cookie (x402-gateway 0.18.3 sessionCookie)', () => {
+  it('does not exempt GPTBot', async () => {
+    const res = await (await app()).request('/', { headers: { 'user-agent': GPT, cookie: `${SESSION_COOKIE}=forged` } });
+    expect(res.status).toBe(402);
   });
 });

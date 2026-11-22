@@ -15,7 +15,6 @@ export function createCrawlGate(env: Record<string, string | undefined> = proces
   const apiKey = env.COINPAY_X402_KEY ?? '';
   const payTo = env.CRAWL_PAY_TO ?? '';
   if (!apiKey || !payTo) return null;
-  const session = new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=`);
   return createGateway({
     siteUrl: (env.SUBMITFLEET_PUBLIC_ORIGIN || 'https://submitfleet.pwa.pit.world').replace(/\/+$/, ''),
     siteName: 'SubmitFleet',
@@ -23,6 +22,9 @@ export function createCrawlGate(env: Record<string, string | undefined> = proces
     payTo,
     contact: 'mailto:anthony@profullstack.com',
     openPaths: ['/healthz', '/readyz', '/install.sh', '/llms.txt', '/api/', '/mcp', '/oauth/', '/i/', '/invites'],
-    exempt: (request: Request) => session.test(request.headers.get('cookie') ?? ''),
+    // A session cookie that is merely present is a hint, never a pass (x402-gateway
+    // 0.18.3): it spares a signed-in reader's odd browser string, but GPTBot with a
+    // made-up cookie is still charged. It used to be `exempt`, which let it read free.
+    sessionCookie: SESSION_COOKIE,
   });
 }

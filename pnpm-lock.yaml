@@ -22,7 +22,7 @@ importers:
         version: 0.3.0
       '@profullstack/footer':
         specifier: latest
-        version: 0.6.20
+        version: 0.7.0
       '@profullstack/profile':
         specifier: 0.1.6
         version: 0.1.6(@libsql/client@0.18.0)
@@ -36,8 +36,8 @@ importers:
         specifier: 0.2.1
         version: 0.2.1
       '@profullstack/x402-gateway':
-        specifier: ^0.18.2
-        version: 0.18.2
+        specifier: ^0.18.3
+        version: 0.18.3
       '@simplewebauthn/server':
         specifier: ^14.0.3
         version: 14.0.3
@@ -384,8 +384,8 @@ packages:
     engines: {node: '>=22.13'}
     hasBin: true
 
-  '@profullstack/footer@0.6.20':
-    resolution: {integrity: sha512-JEB1hZCKSKRro6EI95JMUM4lBX39DUKk6i5ukcKpgeCo+jxwBYcUGiHBrDTdd0/n46M1ECOG4IrDHjgFNGmvGQ==}
+  '@profullstack/footer@0.7.0':
+    resolution: {integrity: sha512-Xvisf7+VTTy7VsX7UTY0VijybHr+Cx3hxlnNT0ExOHq6i1sUxQ1yM1wjYQJumP86oan93vgBODR6DQ0uZKINoA==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -436,8 +436,8 @@ packages:
     resolution: {integrity: sha512-QHeSkpu4O44oJ620qhQqxqFlD3u/OhupmXRnBHw4MGKuDTa0R+Y/727nnF7psSHxxSfnbWfNuVl15z3IXuaZiw==}
     engines: {node: '>=20'}
 
-  '@profullstack/x402-gateway@0.18.2':
-    resolution: {integrity: sha512-PM0S2ADXPKPvPLLlWVbEqMq+EhKxiNxg1wp0jeGf9S5tz2ZGaNIFqun69cO5lJGZgfh03ST4UkJZGr8CmvCWyg==}
+  '@profullstack/x402-gateway@0.18.3':
+    resolution: {integrity: sha512-p0bU1TyKX76IlwRqgLGMlCOGNktVVXAZpXPi2L02lIXm0Lj8IzJmuDe0ddtfXQzPZpKiTIJVvcfUmHqD8fmCMA==}
     engines: {node: '>=20.11'}
 
   '@rolldown/binding-android-arm-eabi@1.2.13':
@@ -1672,7 +1672,7 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@profullstack/footer@0.6.20': {}
+  '@profullstack/footer@0.7.0': {}
 
   '@profullstack/keys@0.1.0': {}
 
@@ -1688,7 +1688,7 @@ snapshots:
 
   '@profullstack/webhooks@0.2.1': {}
 
-  '@profullstack/x402-gateway@0.18.2':
+  '@profullstack/x402-gateway@0.18.3':
     dependencies:
       '@profullstack/keys': 0.1.0
 
