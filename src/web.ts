@@ -224,6 +224,24 @@ export function mountWeb(app: Hono<{ Variables: { actor: Actor } }>, fleet: Subm
     return html(c, page('docs.html').replace('{{FOOTER}}', await siteFooter([{ label: 'Home', href: '/' }, { label: 'GitHub', href: 'https://github.com/profullstack/submitfleet' }], nonce)), 200, nonce);
   });
   app.get('/.well-known/openwebring.json', () => descriptorResponse({ site: SITE_URL, name: 'SubmitFleet' }));
+  // Crawl manifests on the live origin (SUBMITFLEET_PUBLIC_ORIGIN, else the request host).
+  // Only the public pages: /app, /auth and the API need a sign-in or a token.
+  app.get('/robots.txt', (c) =>
+    c.body(`User-agent: *\nAllow: /\nDisallow: /app\nDisallow: /api/\n\nSitemap: ${origin(c)}/sitemap.xml\n`, 200, {
+      'content-type': 'text/plain; charset=utf-8',
+      'cache-control': 'public, max-age=3600',
+    }),
+  );
+  app.get('/sitemap.xml', (c) => {
+    const o = origin(c);
+    const urls = (['/', '/docs', '/signup', '/login'] as const)
+      .map((p) => `  <url><loc>${escapeHtml(o + p)}</loc></url>`)
+      .join('\n');
+    return c.body(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`, 200, {
+      'content-type': 'application/xml; charset=utf-8',
+      'cache-control': 'public, max-age=3600',
+    });
+  });
   const appShell = async (c: Context) => {
     const user = await auth.sessionUser(fleet.db, getCookie(c, auth.SESSION_COOKIE));
     if (!user) return c.redirect(`/login?next=${encodeURIComponent(new URL(c.req.url).pathname)}`);
